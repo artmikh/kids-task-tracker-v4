@@ -1,0 +1,28 @@
+```
+# Build artifacts
+build/
+.dart_tool/
+*.g.dart
+
+# Dependencies
+.pub/
+vendor/
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+```
