@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../domain/user_model.dart';
 
@@ -40,6 +41,14 @@ class AuthRepository {
       
       final user = _auth.currentUser;
       if (user == null) throw Exception('User is null after reload');
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': user.email,
+        'displayName': displayName,
+        'role': 'parent', // По умолчанию родитель
+        'createdAt': FieldValue.serverTimestamp(),
+      });
       
       return AppUser.fromFirebase(user);
     } on FirebaseAuthException catch (e) {

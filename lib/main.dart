@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async'; // Для StreamSubscription
 
@@ -19,7 +20,7 @@ final FirebaseOptions webOptions = const FirebaseOptions(
   apiKey: 'demo-api-key',
   appId: '1:123456789:web:abcdef',
   messagingSenderId: '123456789',
-  projectId: 'demo-kids-task-tracker',
+  projectId: 'demo-no-project',
   authDomain: 'localhost',
   storageBucket: 'localhost',
 );
@@ -35,7 +36,7 @@ void main() async {
   // Подключение к эмуляторам
   // Для Web используем localhost, для Android эмулятора - 10.0.2.2
   FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-  // FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8081);
 
   runApp(const ProviderScope(child: KidsTaskTrackerApp()));
 }
@@ -75,7 +76,6 @@ class KidsTaskTrackerApp extends ConsumerWidget {
 
         redirect: (context, state) {
           final isLoggedIn = FirebaseAuth.instance.currentUser != null;
-          // Исправлено: state.uri.path вместо state.location
           final currentPath = state.uri.path;
           final isLoggingIn = currentPath == '/login' || currentPath == '/register';
 
