@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_provider.dart';
 import '../../children/presentation/children_provider.dart';
 import '../../children/domain/child_model.dart';
@@ -21,6 +22,11 @@ class HomeScreen extends ConsumerWidget {
           appBar: AppBar(
             title: Text('Привет, ${user.displayName ?? "Родитель"}!'),
             actions: [
+              IconButton(
+                  icon: const Icon(Icons.people),
+                  tooltip: 'Семья',
+                  onPressed: () => context.go('/family'),
+                ),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'Выйти',
