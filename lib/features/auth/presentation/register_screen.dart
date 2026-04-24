@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'auth_provider.dart';
+import '../../user/domain/user_profile.dart'; // Импортируем модель профиля с UserRole
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -14,6 +15,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  
+  // Используем тип UserRole вместо String
+  UserRole _selectedRole = UserRole.parent; 
   bool _obscure = true;
 
   @override
@@ -29,10 +33,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     ref.read(authControllerProvider.notifier).clearError();
 
+    // Передаем UserRole напрямую
     final success = await ref.read(authControllerProvider.notifier).signUp(
       _emailCtrl.text.trim(),
       _passCtrl.text,
       _nameCtrl.text.trim(),
+      _selectedRole, 
     );
 
     if (!success && mounted) {
@@ -58,6 +64,26 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               children: [
                 Icon(Icons.person_add, size: 60, color: theme.primaryColor),
                 const SizedBox(height: 24),
+                
+                // Выбор роли
+                Text('Кто вы?', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                SegmentedButton<UserRole>(
+                  segments: const [
+                    // Используем значения enum UserRole, а не строки
+                    ButtonSegment(value: UserRole.parent, label: Text('Родитель'), icon: Icon(Icons.people)),
+                    ButtonSegment(value: UserRole.child, label: Text('Ребенок'), icon: Icon(Icons.child_care)),
+                  ],
+                  selected: {_selectedRole},
+                  onSelectionChanged: (Set<UserRole> newSelection) {
+                    setState(() {
+                      _selectedRole = newSelection.first;
+                    });
+                  },
+                ),
+                
+                const SizedBox(height: 24),
+                
                 TextFormField(
                   controller: _nameCtrl,
                   decoration: InputDecoration(labelText: 'Ваше имя', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
