@@ -1,21 +1,38 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/child_repository.dart';
 import '../domain/child_model.dart';
+import '../../auth/presentation/auth_provider.dart'; // Импортируем провайдер авторизации
 
-// Провайдер репозитория
+// Провайдер репозитория теперь зависит от authStateProvider.
+// При смене пользователя (изменении authState) этот провайдер пересоздастся,
+// что приведет к пересозданию стрима ниже.
 final childRepositoryProvider = Provider<ChildRepository>((ref) {
-  return ChildRepository();
+  // Следим за состоянием авторизации. Это ключевой момент!
+  final authAsync = ref.watch(authStateProvider);
+  
+  // Пока авторизация загружается или ошибка - возвращаем заглушку репозитория
+  // (хотя стрим ниже это обработает через isEmpty)
+  return ChildRepository(); 
 });
 
 // Провайдер потока данных (список детей)
 final childrenStreamProvider = StreamProvider<List<Child>>((ref) {
   final repository = ref.watch(childRepositoryProvider);
+  
+  // Если пользователь не залогинен, возвращаем пустой список сразу
+  if (repository.currentParentId == null) {
+    return Stream.value([]);
+  }
+
+  // Возвращаем стрим только для текущего родителя
   return repository.getChildrenStream();
 });
 
 // Контроллер для действий (добавить, удалить)
+// Также зависит от authStateProvider, чтобы иметь актуальный репозиторий
 final childrenControllerProvider = StateNotifierProvider<ChildrenController, ChildrenState>((ref) {
-  return ChildrenController(ref.watch(childRepositoryProvider));
+  final repository = ref.watch(childRepositoryProvider);
+  return ChildrenController(repository);
 });
 
 class ChildrenState {
@@ -47,7 +64,7 @@ class ChildrenController extends StateNotifier<ChildrenState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final newChild = Child(
-        id: '', // ID сгенерируется в Firestore
+        id: '', 
         parentId: parentId,
         name: name,
         avatarUrl: avatarUrl,
@@ -56,6 +73,18 @@ class ChildrenController extends StateNotifier<ChildrenState> {
       );
       
       await _repository.addChild(newChild);
+      state = state.copyWith(isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
+    }
+  }
+  
+  Future<bool> deleteChild(String childId) async {
+     state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repository.deleteChild(childId);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {

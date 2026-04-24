@@ -12,10 +12,8 @@ class ChildRepository {
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance;
 
-  // Получаем текущего авторизованного родителя
   String? get currentParentId => _auth.currentUser?.uid;
 
-  // Коллекция детей
   CollectionReference get _childrenCollection => _firestore.collection('children');
 
   /// Поток списка детей для текущего родителя
@@ -27,27 +25,24 @@ class ChildRepository {
         .where('parentId', isEqualTo: parentId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Child.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => Child.fromFirestore(doc))
+              .toList();
+        });
+        // Убрали .handleError отсюда, чтобы не ломать тип Stream<List<Child>>.
+        // Ошибки лучше обрабатывать в UI через .when(data, error, loading).
   }
 
-  /// Добавление нового ребенка
   Future<void> addChild(Child child) async {
     if (currentParentId == null) throw Exception('Родитель не авторизован');
-    
-    // Мы не передаем ID, он сгенерируется автоматически при добавлении
-    final docRef = await _childrenCollection.add(child.toMap());
-    // Опционально можно обновить документ с правильным ID, если нужно, 
-    // но обычно хватает того, что мы храним ID внутри toMap или используем doc.id
+    await _childrenCollection.add(child.toMap());
   }
 
-  /// Удаление ребенка
   Future<void> deleteChild(String childId) async {
     await _childrenCollection.doc(childId).delete();
   }
   
-  /// Обновление данных ребенка
   Future<void> updateChild(Child child) async {
     await _childrenCollection.doc(child.id).update(child.toMap());
   }
