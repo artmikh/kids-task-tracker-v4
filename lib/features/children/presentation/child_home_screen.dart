@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_provider.dart';
 
 class ChildHomeScreen extends ConsumerWidget {
@@ -18,6 +19,11 @@ class ChildHomeScreen extends ConsumerWidget {
             title: Text('Привет, ${user.displayName}!'),
             backgroundColor: Colors.orangeAccent, // Цвет для отличия от родительского
             actions: [
+              IconButton(
+                icon: const Icon(Icons.family_restroom), // Иконка семьи
+                tooltip: 'Семья',
+                onPressed: () => context.go('/family'), // Переход на экран семьи
+              ),
               IconButton(
                 icon: const Icon(Icons.logout),
                 onPressed: () => ref.read(authRepositoryProvider).signOut(),
