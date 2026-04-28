@@ -26,49 +26,100 @@ class FamilyRepository {
     return email?.trim().toLowerCase();
   }
 
-  /// Отправить приглашение
+    /// Отправить приглашение
   Future<void> sendInvitation(String targetEmail, InvitationType type) async {
     final uid = currentUid;
     final myEmail = currentEmail;
     
-    if (uid == null) throw Exception('Пользователь не авторизован');
-    if (myEmail == null) throw Exception('Email пользователя не найден');
+    if (uid == null || myEmail == null) throw Exception('Пользователь не авторизован');
 
+    // 1. Нормализация email
     final normalizedTargetEmail = targetEmail.trim().toLowerCase();
+    final normalizedMyEmail = myEmail.toLowerCase();
 
-    if (normalizedTargetEmail == myEmail) {
+    if (normalizedTargetEmail == normalizedMyEmail) {
       throw Exception('Нельзя отправить приглашение самому себе');
     }
 
-    // Проверка профиля отправителя
+    // 2. Находим профиль получателя, чтобы проверить его роль
+    final targetUserQuery = await _usersCollection
+        .where('email', isEqualTo: normalizedTargetEmail)
+        .limit(1)
+        .get();
+
+    if (targetUserQuery.docs.isEmpty) {
+      throw Exception('Пользователь с таким email не найден. Попросите его зарегистрироваться.');
+    }
+
+    final targetUserProfile = UserProfile.fromFirestore(targetUserQuery.docs.first);
+    final targetUid = targetUserProfile.uid;
+    final targetRole = targetUserProfile.role;
+
+    // 3. Проверка ролей (Родитель <-> Ребенок)
+    if (type == InvitationType.parentToChild && targetRole != UserRole.child) {
+      throw Exception('Ошибка: Вы пытаетесь пригласить ребенка, но этот пользователь зарегистрирован как Родитель.');
+    }
+    if (type == InvitationType.childToParent && targetRole != UserRole.parent) {
+      throw Exception('Ошибка: Вы пытаетесь пригласить родителя, но этот пользователь зарегистрирован как Ребенок.');
+    }
+
+    // 4. Проверка: нет ли уже активной связи
+    bool hasLink = false;
+    if (type == InvitationType.parentToChild) {
+      hasLink = await _checkExistingLink(uid, targetUid);
+    } else {
+      hasLink = await _checkExistingLink(targetUid, uid);
+    }
+
+    if (hasLink) {
+      throw Exception('Этот пользователь уже добавлен в вашу семью.');
+    }
+
+    // 5. Проверка: нет ли уже ожидающего приглашения
+    final hasPending = await _checkPendingInvitation(uid, normalizedTargetEmail, type);
+    if (hasPending) {
+      throw Exception('Приглашение этому пользователю уже отправлено и ожидает ответа.');
+    }
+
+    // Получаем имя отправителя
     final senderDoc = await _usersCollection.doc(uid).get();
     if (!senderDoc.exists) throw Exception('Профиль отправителя не найден');
     final senderName = UserProfile.fromFirestore(senderDoc).displayName;
 
-    // Проверка на дубликат pending приглашения (нормализованный email)
-    final existingQuery = await _invitationsCollection
-        .where('toEmail', isEqualTo: normalizedTargetEmail)
-        .where('fromUid', isEqualTo: uid)
-        .where('status', isEqualTo: InvitationStatus.pending.name)
-        .limit(1)
-        .get();
-
-    if (existingQuery.docs.isNotEmpty) {
-      throw Exception('Приглашение этому пользователю уже отправлено');
-    }
-
+    // Создаем приглашение
     final invitation = FamilyInvitation(
       id: '',
       fromUid: uid,
       fromName: senderName,
-      toEmail: normalizedTargetEmail, // Сохраняем нормализованным
+      toEmail: normalizedTargetEmail, // Сохраняем нормализованный email
       type: type,
       status: InvitationStatus.pending,
       createdAt: DateTime.now(),
     );
 
     await _invitationsCollection.add(invitation.toMap());
-    print('[REPO] Приглашение отправлено: $normalizedTargetEmail ($type)');
+  }
+
+  /// Проверка наличия активной связи между родителем и ребенком
+  Future<bool> _checkExistingLink(String parentId, String childId) async {
+    final query = await _linksCollection
+        .where('parentId', isEqualTo: parentId)
+        .where('childId', isEqualTo: childId)
+        .limit(1)
+        .get();
+    return query.docs.isNotEmpty;
+  }
+
+  /// Проверка наличия ожидающего приглашения
+  Future<bool> _checkPendingInvitation(String fromUid, String toEmail, InvitationType type) async {
+    final query = await _invitationsCollection
+        .where('fromUid', isEqualTo: fromUid)
+        .where('toEmail', isEqualTo: toEmail)
+        .where('type', isEqualTo: type.name)
+        .where('status', isEqualTo: InvitationStatus.pending.name)
+        .limit(1)
+        .get();
+    return query.docs.isNotEmpty;
   }
 
   /// Входящие приглашения (УНИВЕРСАЛЬНО: где toEmail == мой email)
