@@ -12,22 +12,48 @@ final familyRepositoryProvider = Provider<FamilyRepository>((ref) {
   return FamilyRepository();
 });
 
+// ИСПРАВЛЕНИЕ: Явно добавляем зависимость от authStateProvider.
+// При смене пользователя (изменении authState) этот провайдер пересоздастся,
+// заставляя стрим переподписаться на нового пользователя.
 final incomingInvitationsProvider = StreamProvider<List<FamilyInvitation>>((ref) {
+  // Следим за состоянием авторизации, чтобы сбрасывать кэш при смене юзера
+  final authState = ref.watch(authStateProvider);
+  
+  // Если пользователь не загружен или вышел, возвращаем пустой список
+  if (authState is! AsyncData || authState.value == null) {
+    return Stream.value([]);
+  }
+
   final repo = ref.watch(familyRepositoryProvider);
   return repo.getIncomingInvitationsStream();
 });
 
 final outgoingInvitationsProvider = StreamProvider<List<FamilyInvitation>>((ref) {
+  // Аналогично для исходящих
+  final authState = ref.watch(authStateProvider);
+  
+  if (authState is! AsyncData || authState.value == null) {
+    return Stream.value([]);
+  }
+
   final repo = ref.watch(familyRepositoryProvider);
   return repo.getOutgoingInvitationsStream();
 });
 
 final myChildrenProvider = StreamProvider<List<UserProfile>>((ref) {
+  final authState = ref.watch(authStateProvider);
+  if (authState is! AsyncData || authState.value == null) {
+    return Stream.value([]);
+  }
   final repo = ref.watch(familyRepositoryProvider);
   return repo.getMyChildrenStream();
 });
 
 final myParentsProvider = StreamProvider<List<UserProfile>>((ref) {
+  final authState = ref.watch(authStateProvider);
+  if (authState is! AsyncData || authState.value == null) {
+    return Stream.value([]);
+  }
   final repo = ref.watch(familyRepositoryProvider);
   return repo.getMyParentsStream();
 });
@@ -113,7 +139,7 @@ class FamilyScreen extends ConsumerWidget {
         return _FamilyContent(user: user);
       },
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (err, _) => Scaffold(body: Center(child: Text('Ошибка: $err'))),
+      error: (err, _) => Scaffold(body: Center(child: Text('Ошибка авторизации: $err'))),
     );
   }
 }
@@ -131,22 +157,12 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
   @override
   void initState() {
     super.initState();
+    // Очищаем ошибки при первом запуске виджета
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(familyControllerProvider.notifier).clearError();
-    });
-  }
-
-  void _handleBack() {
-    // Пытаемся вернуться назад через Navigator
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) {
-      navigator.pop();
-    } else {
-      // Если некуда возвращаться (например, прямой заход на URL), идем на Home
-      if (context.mounted) {
-        context.go('/home');
+      if (mounted) {
+        ref.read(familyControllerProvider.notifier).clearError();
       }
-    }
+    });
   }
 
   @override
@@ -154,9 +170,8 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
     final theme = Theme.of(context);
     final state = ref.watch(familyControllerProvider);
     final isParent = widget.user.role == UserRole.parent;
-    final userName = widget.user.displayName;
 
-    // Обработка ошибок контроллера
+    // Показ ошибок
     if (state.error != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -173,24 +188,25 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(isParent ? 'Семья' : 'Семья', style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 16)),
-            Text(userName, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 12, fontWeight: FontWeight.normal)),
+            Text(isParent ? 'Семья (Родитель)' : 'Семья (Ребенок)', style: const TextStyle(fontSize: 14)),
+            Text(widget.user.displayName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
           ],
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: _handleBack,
-          tooltip: 'Назад',
+          onPressed: () {
+            if (!context.canPop()) {
+              context.go('/home');
+            } else {
+              context.pop();
+            }
+          },
         ),
         actions: [
-          // Кнопка выхода
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Выйти',
-            onPressed: () {
-              ref.read(authRepositoryProvider).signOut();
-              // GoRouter сам перенаправит на /login благодаря listenable
-            },
+            onPressed: () => ref.read(authRepositoryProvider).signOut(),
           ),
         ],
       ),
@@ -205,29 +221,40 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
             ),
             const SizedBox(height: 16),
 
-            if (isParent)
-              ElevatedButton.icon(
-                onPressed: state.isLoading
-                    ? null
-                    : () => _showInviteDialog(context, ref, InvitationType.parentToChild),
-                icon: const Icon(Icons.person_add),
-                label: const Text('Пригласить ребенка'),
-              )
-            else
-              ElevatedButton.icon(
-                onPressed: state.isLoading
-                    ? null
-                    : () => _showInviteDialog(context, ref, InvitationType.childToParent),
-                icon: const Icon(Icons.person_add),
-                label: const Text('Пригласить родителя'),
-              ),
+            // Кнопка отправки приглашения
+            ElevatedButton.icon(
+              onPressed: state.isLoading
+                  ? null
+                  : () => _showInviteDialog(context, ref, isParent ? InvitationType.parentToChild : InvitationType.childToParent),
+              icon: const Icon(Icons.person_add),
+              label: Text(isParent ? 'Пригласить ребенка' : 'Пригласить родителя'),
+            ),
 
             const SizedBox(height: 24),
 
             Expanded(
-              child: isParent
-                  ? _buildParentView(ref, theme)
-                  : _buildChildView(ref, theme),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Секция входящих приглашений
+                    _buildSectionTitle(theme, 'Входящие приглашения'),
+                    _buildIncomingInvitations(ref, theme),
+                    
+                    const SizedBox(height: 20),
+
+                    // Секция исходящих приглашений
+                    _buildSectionTitle(theme, 'Исходящие приглашения'),
+                    _buildOutgoingInvitations(ref, theme),
+
+                    const SizedBox(height: 20),
+
+                    // Секция подтвержденных связей
+                    _buildSectionTitle(theme, isParent ? 'Ваши дети' : 'Ваши родители'),
+                    _buildConfirmedLinks(ref, theme, isParent),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -235,184 +262,124 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
     );
   }
 
-  Widget _buildParentView(WidgetRef ref, ThemeData theme) {
-    final childrenAsync = ref.watch(myChildrenProvider);
-    final outgoingAsync = ref.watch(outgoingInvitationsProvider);
-
-    return Column(
-      children: [
-        outgoingAsync.when(
-          data: (invites) {
-            if (invites.isEmpty) return const SizedBox.shrink();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Ожидает подтверждения:', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                ...invites.map((invite) => Card(
-                  child: ListTile(
-                    title: Text('Приглашение для ${invite.toEmail}'),
-                    subtitle: Text('Отправлено: ${invite.createdAt.day}.${invite.createdAt.month}'),
-                    trailing: const Icon(Icons.hourglass_empty, color: Colors.orange),
-                  ),
-                )),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
-          loading: () => const CircularProgressIndicator(),
-          error: (e, _) => Text('Ошибка загрузки приглашений: $e'),
-        ),
-
-        childrenAsync.when(
-          data: (children) {
-            if (children.isEmpty) {
-              return Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.people_outline, size: 64, color: theme.disabledColor),
-                      const SizedBox(height: 16),
-                      Text('Нет привязанных детей', style: theme.textTheme.bodyLarge),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return Expanded(
-              child: ListView.builder(
-                itemCount: children.length,
-                itemBuilder: (ctx, i) => Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text(children[i].displayName.isNotEmpty ? children[i].displayName[0] : '?')),
-                    title: Text(children[i].displayName),
-                    subtitle: Text(children[i].email),
-                  ),
-                ),
-              ),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Ошибка загрузки детей: $e')),
-        ),
-      ],
+  Widget _buildSectionTitle(ThemeData theme, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
     );
   }
 
-  Widget _buildChildView(WidgetRef ref, ThemeData theme) {
-    final parentsAsync = ref.watch(myParentsProvider);
-    final incomingAsync = ref.watch(incomingInvitationsProvider);
-    final outgoingAsync = ref.watch(outgoingInvitationsProvider);
+  Widget _buildIncomingInvitations(WidgetRef ref, ThemeData theme) {
+    final asyncValue = ref.watch(incomingInvitationsProvider);
+    return _buildInvitationList(asyncValue, ref, theme, isIncoming: true);
+  }
 
-    return Column(
-      children: [
-        // Входящие приглашения
-        incomingAsync.when(
-          data: (invites) {
-            if (invites.isEmpty) return const SizedBox.shrink();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Входящие приглашения:', style: theme.textTheme.titleMedium?.copyWith(color: Colors.orange)),
-                const SizedBox(height: 8),
-                ...invites.map((invite) => Card(
-                  color: Colors.orange.shade50,
-                  child: ListTile(
-                    title: Text('От: ${invite.fromName}'),
-                    subtitle: Text('Email: ${invite.toEmail}'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.check, color: Colors.green),
-                          onPressed: () async {
-                            final success = await ref.read(familyControllerProvider.notifier).acceptInvitation(invite.id);
-                            if (success && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Принято!')));
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () async {
-                            final success = await ref.read(familyControllerProvider.notifier).rejectInvitation(invite.id);
-                            if (success && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Отклонено')));
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                )),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
-          loading: () => const CircularProgressIndicator(),
-          error: (e, _) => Text('Ошибка: $e'),
-        ),
+  Widget _buildOutgoingInvitations(WidgetRef ref, ThemeData theme) {
+    final asyncValue = ref.watch(outgoingInvitationsProvider);
+    return _buildInvitationList(asyncValue, ref, theme, isIncoming: false);
+  }
 
-        // Исходящие приглашения
-        outgoingAsync.when(
-          data: (invites) {
-            if (invites.isEmpty) return const SizedBox.shrink();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Отправленные вами:', style: theme.textTheme.titleMedium?.copyWith(color: Colors.blue)),
-                const SizedBox(height: 8),
-                ...invites.map((invite) => Card(
-                  child: ListTile(
-                    title: Text('Для: ${invite.toEmail}'),
-                    subtitle: Text('Тип: ${invite.type == InvitationType.childToParent ? "Родитель" : "Ребенок"}'),
-                    trailing: const Icon(Icons.access_time, color: Colors.blue),
-                  ),
-                )),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
-          loading: () => const CircularProgressIndicator(),
-          error: (e, _) => Text('Ошибка: $e'),
-        ),
-
-        // Список родителей
-        parentsAsync.when(
-          data: (parents) {
-            if (parents.isEmpty) {
-              return Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.people_outline, size: 64, color: theme.disabledColor),
-                      const SizedBox(height: 16),
-                      Text('Нет привязанных родителей', style: theme.textTheme.bodyLarge),
-                    ],
-                  ),
+  Widget _buildInvitationList(AsyncValue<List<FamilyInvitation>> asyncValue, WidgetRef ref, ThemeData theme, {required bool isIncoming}) {
+    return asyncValue.when(
+      data: (invites) {
+        if (invites.isEmpty) {
+          return Card(
+            color: theme.cardColor.withOpacity(0.5),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text('Нет приглашений', style: theme.textTheme.bodyMedium?.copyWith(color: theme.disabledColor)),
+            ),
+          );
+        }
+        return Column(
+          children: invites.map((invite) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isIncoming ? Colors.orange.shade100 : Colors.blue.shade100,
+                  child: Icon(isIncoming ? Icons.mail : Icons.send, color: isIncoming ? Colors.orange : Colors.blue),
                 ),
-              );
-            }
-            return Expanded(
-              child: ListView.builder(
-                itemCount: parents.length,
-                itemBuilder: (ctx, i) => Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text(parents[i].displayName.isNotEmpty ? parents[i].displayName[0] : '?')),
-                    title: Text(parents[i].displayName),
-                    subtitle: Text(parents[i].email),
-                  ),
-                ),
+                title: Text(isIncoming ? 'От: ${invite.fromName}' : 'Для: ${invite.toEmail}'),
+                subtitle: Text('Статус: ${_getStatusText(invite.status)}'),
+                trailing: isIncoming && invite.status == InvitationStatus.pending
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.check, color: Colors.green),
+                            onPressed: () async {
+                              final success = await ref.read(familyControllerProvider.notifier).acceptInvitation(invite.id);
+                              if (success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Принято!')));
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            onPressed: () async {
+                              final success = await ref.read(familyControllerProvider.notifier).rejectInvitation(invite.id);
+                              if (success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Отклонено')));
+                              }
+                            },
+                          ),
+                        ],
+                      )
+                    : Icon(
+                        invite.status == InvitationStatus.pending ? Icons.hourglass_empty : Icons.check_circle,
+                        color: invite.status == InvitationStatus.pending ? Colors.grey : Colors.green,
+                      ),
               ),
             );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Ошибка: $e')),
-        ),
-      ],
+          }).toList(),
+        );
+      },
+      loading: () => const Card(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator())),
+      error: (e, _) => Card(color: Colors.red.shade50, child: Padding(padding: const EdgeInsets.all(16.0), child: Text('Ошибка: $e', style: const TextStyle(color: Colors.red)))),
     );
+  }
+
+  Widget _buildConfirmedLinks(WidgetRef ref, ThemeData theme, bool isParent) {
+    final asyncValue = isParent ? ref.watch(myChildrenProvider) : ref.watch(myParentsProvider);
+
+    return asyncValue.when(
+      data: (profiles) {
+        if (profiles.isEmpty) {
+          return Card(
+            color: theme.cardColor.withOpacity(0.5),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(isParent ? 'Нет привязанных детей' : 'Нет привязанных родителей', style: theme.textTheme.bodyMedium?.copyWith(color: theme.disabledColor)),
+            ),
+          );
+        }
+        return Column(
+          children: profiles.map((profile) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: CircleAvatar(child: Text(profile.displayName.isNotEmpty ? profile.displayName[0] : '?')),
+                title: Text(profile.displayName),
+                subtitle: Text(profile.email),
+                trailing: const Icon(Icons.check_circle, color: Colors.green),
+              ),
+            );
+          }).toList(),
+        );
+      },
+      loading: () => const Card(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator())),
+      error: (e, _) => Card(color: Colors.red.shade50, child: Padding(padding: const EdgeInsets.all(16.0), child: Text('Ошибка: $e', style: const TextStyle(color: Colors.red)))),
+    );
+  }
+
+  String _getStatusText(InvitationStatus status) {
+    switch (status) {
+      case InvitationStatus.pending: return 'Ожидает';
+      case InvitationStatus.accepted: return 'Принято';
+      case InvitationStatus.rejected: return 'Отклонено';
+      case InvitationStatus.cancelled: return 'Отменено';
+    }
   }
 
   void _showInviteDialog(BuildContext context, WidgetRef ref, InvitationType type) {

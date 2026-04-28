@@ -18,75 +18,103 @@ class FamilyRepository {
   CollectionReference get _linksCollection => _firestore.collection('family_links');
   CollectionReference get _usersCollection => _firestore.collection('users');
 
-  // Получаем ID текущего пользователя динамически
   String? get currentUid => _auth.currentUser?.uid;
-  String? get currentEmail => _auth.currentUser?.email;
+  
+  // Нормализуем email: нижний регистр + trim
+  String? get currentEmail {
+    final email = _auth.currentUser?.email;
+    return email?.trim().toLowerCase();
+  }
 
   /// Отправить приглашение
   Future<void> sendInvitation(String targetEmail, InvitationType type) async {
     final uid = currentUid;
+    final myEmail = currentEmail;
+    
     if (uid == null) throw Exception('Пользователь не авторизован');
+    if (myEmail == null) throw Exception('Email пользователя не найден');
 
+    final normalizedTargetEmail = targetEmail.trim().toLowerCase();
+
+    if (normalizedTargetEmail == myEmail) {
+      throw Exception('Нельзя отправить приглашение самому себе');
+    }
+
+    // Проверка профиля отправителя
     final senderDoc = await _usersCollection.doc(uid).get();
     if (!senderDoc.exists) throw Exception('Профиль отправителя не найден');
     final senderName = UserProfile.fromFirestore(senderDoc).displayName;
 
-    if (targetEmail == currentEmail) {
-      throw Exception('Нельзя отправить приглашение самому себе');
-    }
-
-    // Проверка на дубликат pending приглашения
+    // Проверка на дубликат pending приглашения (нормализованный email)
     final existingQuery = await _invitationsCollection
-        .where('toEmail', isEqualTo: targetEmail)
+        .where('toEmail', isEqualTo: normalizedTargetEmail)
         .where('fromUid', isEqualTo: uid)
         .where('status', isEqualTo: InvitationStatus.pending.name)
         .limit(1)
         .get();
 
     if (existingQuery.docs.isNotEmpty) {
-      throw Exception('Приглашение уже отправлено');
+      throw Exception('Приглашение этому пользователю уже отправлено');
     }
 
     final invitation = FamilyInvitation(
-      id: '', 
+      id: '',
       fromUid: uid,
       fromName: senderName,
-      toEmail: targetEmail,
+      toEmail: normalizedTargetEmail, // Сохраняем нормализованным
       type: type,
       status: InvitationStatus.pending,
       createdAt: DateTime.now(),
     );
 
     await _invitationsCollection.add(invitation.toMap());
+    print('[REPO] Приглашение отправлено: $normalizedTargetEmail ($type)');
   }
 
-  /// Входящие приглашения (для текущего email)
+  /// Входящие приглашения (УНИВЕРСАЛЬНО: где toEmail == мой email)
   Stream<List<FamilyInvitation>> getIncomingInvitationsStream() {
-    // Возвращаем пустой стрим, если нет email
     final email = currentEmail;
-    if (email == null) return Stream.value([]);
+    if (email == null) {
+      print('[REPO] Email null, возвращаем пустой стрим входящих');
+      return Stream.value([]);
+    }
 
+    print('[REPO] Подписка на входящие для: $email');
+    
     return _invitationsCollection
         .where('toEmail', isEqualTo: email)
         .where('status', isEqualTo: InvitationStatus.pending.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => FamilyInvitation.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          final invites = snapshot.docs
+              .map((doc) => FamilyInvitation.fromFirestore(doc))
+              .toList();
+          print('[REPO] Получено входящих приглашений: ${invites.length}');
+          return invites;
+        });
   }
 
-  /// Исходящие приглашения (для текущего uid)
+  /// Исходящие приглашения (УНИВЕРСАЛЬНО: где fromUid == мой uid)
   Stream<List<FamilyInvitation>> getOutgoingInvitationsStream() {
     final uid = currentUid;
-    if (uid == null) return Stream.value([]);
+    if (uid == null) {
+      print('[REPO] UID null, возвращаем пустой стрим исходящих');
+      return Stream.value([]);
+    }
+
+    print('[REPO] Подписка на исходящие для: $uid');
 
     return _invitationsCollection
         .where('fromUid', isEqualTo: uid)
         .where('status', isEqualTo: InvitationStatus.pending.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => FamilyInvitation.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+          final invites = snapshot.docs
+              .map((doc) => FamilyInvitation.fromFirestore(doc))
+              .toList();
+          print('[REPO] Получено исходящих приглашений: ${invites.length}');
+          return invites;
+        });
   }
 
   /// Принять приглашение
@@ -99,22 +127,24 @@ class FamilyRepository {
       final inviteDoc = await transaction.get(inviteRef);
 
       if (!inviteDoc.exists) throw Exception('Приглашение не найдено');
-      
-      final invitation = FamilyInvitation.fromFirestore(inviteDoc);
-      if (invitation.toEmail != email) throw Exception('Приглашение не для вас');
 
-      // Обновляем статус
+      final invitation = FamilyInvitation.fromFirestore(inviteDoc);
+      
+      // Сравнение нормализованных email
+      if (invitation.toEmail != email) {
+        throw Exception('Это приглашение не для вас (${invitation.toEmail} != $email)');
+      }
+
       transaction.update(inviteRef, {
         'status': InvitationStatus.accepted.name,
         'respondedAt': Timestamp.fromDate(DateTime.now()),
       });
 
-      // Находим UID принявшего (кто сейчас залогинен)
       final receiverQuery = await _usersCollection
           .where('email', isEqualTo: email)
           .limit(1)
           .get();
-      
+
       if (receiverQuery.docs.isEmpty) throw Exception('Профиль пользователя не найден');
       final receiverUid = receiverQuery.docs.first.id;
 
@@ -127,8 +157,7 @@ class FamilyRepository {
         parentId = receiverUid;
         childId = invitation.fromUid;
       }
-      
-      // Проверка дубля связи
+
       final existingLink = await _linksCollection
           .where('parentId', isEqualTo: parentId)
           .where('childId', isEqualTo: childId)
@@ -137,12 +166,13 @@ class FamilyRepository {
 
       if (existingLink.docs.isEmpty) {
         final newLink = FamilyLink(
-          id: '', 
-          parentId: parentId, 
-          childId: childId, 
-          createdAt: DateTime.now()
+          id: '',
+          parentId: parentId,
+          childId: childId,
+          createdAt: DateTime.now(),
         );
         transaction.set(_linksCollection.doc(), newLink.toMap());
+        print('[REPO] Связь создана: $parentId <-> $childId');
       }
     });
   }
@@ -164,7 +194,7 @@ class FamilyRepository {
     });
   }
 
-  /// Список детей для родителя (использует currentUid внутри)
+  /// Список детей для родителя
   Stream<List<UserProfile>> getMyChildrenStream() {
     final parentId = currentUid;
     if (parentId == null) return Stream.value([]);
@@ -173,24 +203,19 @@ class FamilyRepository {
         .where('parentId', isEqualTo: parentId)
         .snapshots()
         .asyncMap((snapshot) async {
-          final childIds = snapshot.docs
-              .map((doc) => FamilyLink.fromFirestore(doc).childId)
-              .toList();
-          
+          final childIds = snapshot.docs.map((doc) => FamilyLink.fromFirestore(doc).childId).toList();
           if (childIds.isEmpty) return [];
 
           final profiles = <UserProfile>[];
           for (var id in childIds) {
             final doc = await _usersCollection.doc(id).get();
-            if (doc.exists) {
-              profiles.add(UserProfile.fromFirestore(doc));
-            }
+            if (doc.exists) profiles.add(UserProfile.fromFirestore(doc));
           }
           return profiles;
         });
   }
 
-  /// Список родителей для ребенка (использует currentUid внутри)
+  /// Список родителей для ребенка
   Stream<List<UserProfile>> getMyParentsStream() {
     final childId = currentUid;
     if (childId == null) return Stream.value([]);
@@ -199,24 +224,15 @@ class FamilyRepository {
         .where('childId', isEqualTo: childId)
         .snapshots()
         .asyncMap((snapshot) async {
-          final parentIds = snapshot.docs
-              .map((doc) => FamilyLink.fromFirestore(doc).parentId)
-              .toList();
-          
+          final parentIds = snapshot.docs.map((doc) => FamilyLink.fromFirestore(doc).parentId).toList();
           if (parentIds.isEmpty) return [];
 
           final profiles = <UserProfile>[];
           for (var id in parentIds) {
             final doc = await _usersCollection.doc(id).get();
-            if (doc.exists) {
-              profiles.add(UserProfile.fromFirestore(doc));
-            }
+            if (doc.exists) profiles.add(UserProfile.fromFirestore(doc));
           }
           return profiles;
         });
-  }
-  
-  Future<void> removeLink(String linkId) async {
-    await _linksCollection.doc(linkId).delete();
   }
 }
