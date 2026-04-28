@@ -15,8 +15,9 @@ import 'features/auth/presentation/register_screen.dart';
 import 'features/family/presentation/family_screen.dart';
 import 'features/home/presentation/home_screen.dart'; // Экран родителя
 import 'features/children/presentation/child_home_screen.dart'; // Экран ребенка (создадим ниже)
-import 'features/auth/presentation/auth_provider.dart';
-import 'features/user/domain/user_profile.dart'; // Для UserRole
+// import 'features/auth/presentation/auth_provider.dart';
+import 'features/rewards/presentation/rewards_screen.dart';
+// import 'features/user/domain/user_profile.dart'; // Для UserRole
 
 // Конфигурация для веба
 final FirebaseOptions webOptions = const FirebaseOptions(
@@ -59,6 +60,8 @@ class KidsTaskTrackerApp extends ConsumerWidget {
           GoRoute(path: '/home', name: 'home', builder: (_, __) => const HomeScreen()),
           GoRoute(path: '/child-home', name: 'childHome', builder: (_, __) => const ChildHomeScreen()),
           GoRoute(path: '/family', name: 'family', builder: (context, state) => const FamilyScreen()),
+          GoRoute(path: '/rewards', name: 'rewards', builder: (context, state) => const RewardsScreen(),
+),
         ],
 
         redirect: (context, state) async {
