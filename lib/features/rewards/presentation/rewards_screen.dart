@@ -55,20 +55,32 @@ class RewardController extends StateNotifier<RewardState> {
 
   RewardController(this._repo) : super(RewardState());
 
-  // Исправлено: создаем объект Reward внутри контроллера
-  Future<bool> addReward(RewardType type, String title, String description, int costInStars) async {
+  // // Исправлено: создаем объект Reward внутри контроллера
+  // Future<bool> addReward(RewardType type, String title, String description, int costInStars) async {
+  //   state = state.copyWith(isLoading: true, error: null);
+  //   try {
+  //     final newReward = Reward(
+  //       id: '', // ID сгенерируется в Firestore
+  //       parentId: '', // Репозиторий сам подставит текущий UID
+  //       type: type,
+  //       title: title,
+  //       description: description,
+  //       costInStars: costInStars, // Используем правильное имя поля
+  //       createdAt: DateTime.now(),
+  //     );
+  //     await _repo.addReward(newReward);
+  //     state = state.copyWith(isLoading: false);
+  //     return true;
+  //   } catch (e) {
+  //     state = state.copyWith(isLoading: false, error: e.toString().replaceAll('Exception: ', ''));
+  //     return false;
+  //   }
+  // }
+
+  Future<bool> addReward(Reward reward) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final newReward = Reward(
-        id: '', // ID сгенерируется в Firestore
-        parentId: '', // Репозиторий сам подставит текущий UID
-        type: type,
-        title: title,
-        description: description,
-        costInStars: costInStars, // Используем правильное имя поля
-        createdAt: DateTime.now(),
-      );
-      await _repo.addReward(newReward);
+      await _repo.addReward(reward);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -190,7 +202,6 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
             ),
             const SizedBox(height: 24),
             Expanded(
-              // Исправлено: используем именованные аргументы для when
               child: rewardsAsync.when(
                 data: (rewards) {
                   if (rewards.isEmpty) {
@@ -216,18 +227,24 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: ListTile(
-                          leading: _getRewardIcon(reward.type),
+                          leading: _getRewardIcon(reward.type, reward.costInStars ?? 0),
                           title: Text(reward.title),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(reward.description),
                               const SizedBox(height: 4),
-                              // Исправлено: используем cost вместо pointsRequired
-                              Text(
-                                'Цена: ${reward.costInStars} ⭐',
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber),
-                              ),
+                              Row(children: [
+                                const Icon(Icons.star, size: 16, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Text('${reward.costInStars} звезд', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                if (reward.type == RewardType.screenTime && reward.durationMinutes != null) ...[
+                                  const SizedBox(width: 12),
+                                  const Icon(Icons.timer, size: 16, color: Colors.blue),
+                                  const SizedBox(width: 4),
+                                  Text('${reward.durationMinutes} мин', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                                ],
+                              ]),
                             ],
                           ),
                           trailing: Row(
@@ -258,22 +275,45 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
     );
   }
 
-  Widget _getRewardIcon(RewardType type) {
+  Widget _getRewardIcon(RewardType type, int value) {
+    IconData iconData;
+    Color bgColor;
+
     switch (type) {
       case RewardType.points:
-        return const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.star, color: Colors.white));
+        iconData = Icons.star;
+        bgColor = Colors.green;
+        break;
       case RewardType.gift:
-        return const CircleAvatar(backgroundColor: Colors.purple, child: Icon(Icons.card_giftcard, color: Colors.white));
+        iconData = Icons.card_giftcard;
+        bgColor = Colors.purple;
+        break;
       case RewardType.screenTime:
-        return const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.timer, color: Colors.white));
+        iconData = Icons.timer;
+        bgColor = Colors.blue;
+        break;
     }
+
+    return CircleAvatar(
+      backgroundColor: bgColor,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(iconData, color: Colors.white, size: 20),
+          // Отображаем значение, если оно больше 0 или всегда
+          if (value > 0) 
+            Text('$value', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
 
   void _showRewardDialog(BuildContext context, WidgetRef ref, {Reward? reward}) {
     final titleCtrl = TextEditingController(text: reward?.title ?? '');
     final descCtrl = TextEditingController(text: reward?.description ?? '');
-    // Исправлено: используем cost
     final costCtrl = TextEditingController(text: reward?.costInStars.toString() ?? '');
+    final durationCtrl = TextEditingController(text: reward?.durationMinutes?.toString() ?? '');
+    final imageUrlCtrl = TextEditingController(text: reward?.imageUrl ?? '');
     RewardType selectedType = reward?.type ?? RewardType.points;
 
     showDialog(
@@ -296,22 +336,39 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
                   onChanged: (val) => setDialogState(() => selectedType = val!),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(labelText: 'Название'),
-                ),
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Название')),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: descCtrl,
-                  decoration: const InputDecoration(labelText: 'Описание'),
-                  maxLines: 2,
-                ),
+                TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Описание'), maxLines: 2),
                 const SizedBox(height: 16),
                 TextField(
                   controller: costCtrl,
                   decoration: const InputDecoration(labelText: 'Стоимость (звезды)', prefixIcon: Icon(Icons.star)),
                   keyboardType: TextInputType.number,
                 ),
+                
+                // УСЛОВНОЕ ПОЛЕ: Время
+                if (selectedType == RewardType.screenTime) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: durationCtrl,
+                    decoration: const InputDecoration(labelText: 'Длительность (минуты)', prefixIcon: Icon(Icons.timer)),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+
+                // УСЛОВНОЕ ПОЛЕ: Картинка для подарка
+                if (selectedType == RewardType.gift) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: imageUrlCtrl,
+                    decoration: const InputDecoration(labelText: 'URL картинки подарка', prefixIcon: Icon(Icons.image)),
+                    keyboardType: TextInputType.url,
+                  ),
+                  if (imageUrlCtrl.text.isNotEmpty) ...[
+                     const SizedBox(height: 8),
+                     ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(imageUrlCtrl.text, height: 100, fit: BoxFit.cover)),
+                  ]
+                ],
               ],
             ),
           ),
@@ -320,26 +377,45 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
             FilledButton(
               onPressed: () async {
                 if (titleCtrl.text.isEmpty || costCtrl.text.isEmpty) return;
-                
-                final costInStars = int.tryParse(costCtrl.text) ?? 0;
-                if (reward == null) {
-                  // Создание
-                  final success = await ref.read(rewardControllerProvider.notifier).addReward(
-                    selectedType, titleCtrl.text, descCtrl.text, costInStars,
-                  );
-                  if (success && ctx.mounted) Navigator.pop(ctx);
-                } else {
-                  // Редактирование
-                  // Исправлено: используем copyWith с правильными полями
-                  final updated = reward.copyWith(
-                    type: selectedType,
-                    title: titleCtrl.text,
-                    description: descCtrl.text,
-                    costInStars: costInStars,
-                  );
-                  final success = await ref.read(rewardControllerProvider.notifier).updateReward(updated);
-                  if (success && ctx.mounted) Navigator.pop(ctx);
+                // final cost = int.tryParse(costCtrl.text) ?? 0;
+                final costStr = costCtrl.text.trim();
+                final int cost = int.tryParse(costStr) ?? 0;
+                // final duration = selectedType == RewardType.screenTime ? (int.tryParse(durationCtrl.text) ?? 0) : null;
+
+                // Обработка длительности
+                int duration = 0;
+                if (selectedType == RewardType.screenTime) {
+                  final durationStr = durationCtrl.text.trim();
+                  duration = int.tryParse(durationStr) ?? 0;
                 }
+
+                // Обработка URL картинки
+                String? imageUrl;
+                if (selectedType == RewardType.gift) {
+                  imageUrl = imageUrlCtrl.text.trim();
+                  if (imageUrl.isEmpty) imageUrl = null;
+                }
+                
+                final newReward = Reward(
+                  id: reward?.id ?? '',
+                  parentId: reward?.parentId ?? ref.read(authStateProvider).value!.uid,
+                  type: selectedType,
+                  title: titleCtrl.text,
+                  description: descCtrl.text,
+                  costInStars: cost,
+                  durationMinutes: duration,
+                  imageUrl: imageUrl,
+                  createdAt: reward?.createdAt ?? DateTime.now(),
+                );
+
+                bool success;
+                if (reward == null) {
+                  success = await ref.read(rewardControllerProvider.notifier).addReward(newReward);
+                } else {
+                  success = await ref.read(rewardControllerProvider.notifier).updateReward(newReward);
+                }
+
+                if (success && ctx.mounted) Navigator.pop(ctx);
               },
               child: const Text('Сохранить'),
             ),

@@ -16,6 +16,7 @@ class Reward {
   final RewardType type;
   final int costInStars;       // Стоимость в звездах (для screen_time и points). Для gift может быть 0 или условная цена.
   final int durationMinutes;   // Для типа screen_time (сколько минут добавляется)
+  final String? imageUrl;
   final bool isCompleted;      // Для типа gift (выполнено ли обещание)
   final DateTime createdAt;
 
@@ -28,6 +29,7 @@ class Reward {
     required this.type,
     this.costInStars = 0,
     this.durationMinutes = 0,
+    this.imageUrl,
     this.isCompleted = false,
     required this.createdAt,
   });
@@ -46,6 +48,7 @@ class Reward {
       ),
       costInStars: data['costInStars'] ?? 0,
       durationMinutes: data['durationMinutes'] ?? 0,
+      imageUrl: data['imageUrl'],
       isCompleted: data['isCompleted'] ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -60,6 +63,7 @@ class Reward {
       'type': type.name,
       'costInStars': costInStars,
       'durationMinutes': durationMinutes,
+      'imageUrl': imageUrl,
       'isCompleted': isCompleted,
       'createdAt': Timestamp.fromDate(createdAt),
     };
@@ -74,6 +78,7 @@ class Reward {
     RewardType? type,
     int? costInStars,
     int? durationMinutes,
+    String? imageUrl,
     bool? isCompleted,
     DateTime? createdAt,
   }) {
@@ -86,6 +91,7 @@ class Reward {
       type: type ?? this.type,
       costInStars: costInStars ?? this.costInStars,
       durationMinutes: durationMinutes ?? this.durationMinutes,
+      imageUrl: imageUrl ?? this.imageUrl,
       isCompleted: isCompleted ?? this.isCompleted,
       createdAt: createdAt ?? this.createdAt,
     );
