@@ -1,6 +1,11 @@
+import 'dart:convert'; // Для кодирования в Base64
+import 'dart:io' show Platform; // Для проверки платформы
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb; // Для проверки веба
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../data/reward_repository.dart';
 import '../domain/reward_model.dart';
 import '../../auth/presentation/auth_provider.dart';
@@ -146,6 +151,9 @@ class _RewardsContent extends ConsumerStatefulWidget {
 }
 
 class _RewardsContentState extends ConsumerState<_RewardsContent> {
+  final ImagePicker _picker = ImagePicker();
+  XFile? _pickedFile; // Хранит выбранный файл текущей сессии диалога
+  String? _base64Image; // Хранит строку Base64 для сохранения
   @override
   void initState() {
     super.initState();
@@ -227,7 +235,26 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: ListTile(
-                          leading: _getRewardIcon(reward.type, reward.costInStars ?? 0),
+                          // leading: _buildRewardLeading(reward),
+                          leading: reward.type == RewardType.gift && reward.imageUrl != null && reward.imageUrl!.isNotEmpty
+                              ? ClipRect(
+                                  child: kIsWeb || reward.imageUrl!.length > 200
+                                      ? Image.memory(
+                                          base64Decode(reward.imageUrl!),
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => _getRewardIcon(reward.type, reward.costInStars ?? 0),
+                                        )
+                                      : Image.network(
+                                          reward.imageUrl!,
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => _getRewardIcon(reward.type, reward.costInStars ?? 0),
+                                        ),
+                                )
+                              : _getRewardIcon(reward.type, reward.costInStars ?? 0),
                           title: Text(reward.title),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,6 +302,37 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
     );
   }
 
+  Widget _buildRewardLeading(Reward reward) {
+    // Если это подарок и есть картинка (URL или Base64), показываем её
+    if (reward.type == RewardType.gift && reward.imageUrl != null && reward.imageUrl!.isNotEmpty) {
+      // Проверка: если строка очень длинная, скорее всего это Base64
+      if (reward.imageUrl!.length > 100) {
+        return ClipOval(
+          child: Image.memory(
+            base64Decode(reward.imageUrl!),
+            width: 50,
+            height: 50,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _getRewardIcon(reward.type, reward.costInStars ?? 0),
+          ),
+        );
+      } else {
+        // Иначе считаем, что это URL
+        return ClipOval(
+          child: Image.network(
+            reward.imageUrl!,
+            width: 50,
+            height: 50,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _getRewardIcon(reward.type, reward.costInStars ?? 0),
+          ),
+        );
+      }
+    }
+    // Иначе стандартная иконка
+    return _getRewardIcon(reward.type, reward.costInStars ?? 0);
+  }
+
   Widget _getRewardIcon(RewardType type, int value) {
     IconData iconData;
     Color bgColor;
@@ -313,114 +371,193 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
     final descCtrl = TextEditingController(text: reward?.description ?? '');
     final costCtrl = TextEditingController(text: reward?.costInStars.toString() ?? '');
     final durationCtrl = TextEditingController(text: reward?.durationMinutes?.toString() ?? '');
+    // Инициализируем контроллер картинки текущим значением (Base64 или URL)
     final imageUrlCtrl = TextEditingController(text: reward?.imageUrl ?? '');
+    
     RewardType selectedType = reward?.type ?? RewardType.points;
+    // Флаг для предпросмотра: true если это Base64 строка
+    bool isBase64Preview = (reward?.imageUrl ?? '').startsWith('data:image');
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(reward == null ? 'Новая награда' : 'Редактировать награду'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<RewardType>(
-                  value: selectedType,
-                  decoration: const InputDecoration(labelText: 'Тип награды'),
-                  items: const [
-                    DropdownMenuItem(value: RewardType.points, child: Text('Баллы / Звезды')),
-                    DropdownMenuItem(value: RewardType.gift, child: Text('Реальный подарок')),
-                    DropdownMenuItem(value: RewardType.screenTime, child: Text('Время гаджета')),
-                  ],
-                  onChanged: (val) => setDialogState(() => selectedType = val!),
-                ),
-                const SizedBox(height: 16),
-                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Название')),
-                const SizedBox(height: 16),
-                TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Описание'), maxLines: 2),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: costCtrl,
-                  decoration: const InputDecoration(labelText: 'Стоимость (звезды)', prefixIcon: Icon(Icons.star)),
-                  keyboardType: TextInputType.number,
-                ),
-                
-                // УСЛОВНОЕ ПОЛЕ: Время
-                if (selectedType == RewardType.screenTime) ...[
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: Text(reward == null ? 'Новая награда' : 'Редактировать награду'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<RewardType>(
+                    value: selectedType,
+                    decoration: const InputDecoration(labelText: 'Тип награды'),
+                    items: const [
+                      DropdownMenuItem(value: RewardType.points, child: Text('Баллы / Звезды')),
+                      DropdownMenuItem(value: RewardType.gift, child: Text('Реальный подарок')),
+                      DropdownMenuItem(value: RewardType.screenTime, child: Text('Время гаджета')),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedType = val!);
+                    },
+                  ),
                   const SizedBox(height: 16),
                   TextField(
-                    controller: durationCtrl,
-                    decoration: const InputDecoration(labelText: 'Длительность (минуты)', prefixIcon: Icon(Icons.timer)),
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(labelText: 'Название'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(labelText: 'Описание'),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: costCtrl,
+                    decoration: const InputDecoration(labelText: 'Стоимость (звезды)', prefixIcon: Icon(Icons.star)),
                     keyboardType: TextInputType.number,
                   ),
+                  
+                  // УСЛОВНОЕ ПОЛЕ: Время
+                  if (selectedType == RewardType.screenTime) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: durationCtrl,
+                      decoration: const InputDecoration(labelText: 'Длительность (минуты)', prefixIcon: Icon(Icons.timer)),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+
+                  // УСЛОВНОЕ ПОЛЕ: Картинка для подарка
+                  if (selectedType == RewardType.gift) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: imageUrlCtrl,
+                            decoration: const InputDecoration(labelText: 'Изображение', hintText: 'URL или файл'),
+                            enabled: false, // Только чтение, выбор через кнопку
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.camera_alt),
+                          onPressed: () async {
+                            try {
+                              final pickedFile = await ImagePicker().pickImage(
+                                source: ImageSource.gallery,
+                                // СЖАТИЕ: Устанавливаем качество 20% (достаточно для превью, сильно уменьшает размер)
+                                imageQuality: 20, 
+                                maxWidth: 400, // Ограничиваем ширину
+                                maxHeight: 400, // Ограничиваем высоту
+                              );
+
+                              if (pickedFile != null) {
+                                // Читаем байты
+                                final bytes = await pickedFile.readAsBytes();
+                                // Кодируем в Base64
+                                final base64Image = base64Encode(bytes);
+                                
+                                // Обновляем состояние диалога
+                                setDialogState(() {
+                                  imageUrlCtrl.text = base64Image; // Сохраняем ТОЛЬКО чистый Base64
+                                });
+                              }
+                            } catch (e) {
+                              debugPrint('Ошибка загрузки изображения: $e');
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Не удалось загрузить фото: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    // Предпросмотр изображения
+                    if (imageUrlCtrl.text.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 150,
+                          width: double.infinity,
+                          color: Colors.grey[200],
+                          child: kIsWeb || isBase64Preview
+                              ? Image.memory(
+                                  base64Decode(imageUrlCtrl.text.split(',').last),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка изображения')),
+                                )
+                              : Image.network(
+                                  imageUrlCtrl.text,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка загрузки')),
+                                ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setDialogState(() {
+                            imageUrlCtrl.clear();
+                            isBase64Preview = false;
+                          });
+                        },
+                        child: const Text('Удалить фото', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ],
                 ],
-
-                // УСЛОВНОЕ ПОЛЕ: Картинка для подарка
-                if (selectedType == RewardType.gift) ...[
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: imageUrlCtrl,
-                    decoration: const InputDecoration(labelText: 'URL картинки подарка', prefixIcon: Icon(Icons.image)),
-                    keyboardType: TextInputType.url,
-                  ),
-                  if (imageUrlCtrl.text.isNotEmpty) ...[
-                     const SizedBox(height: 8),
-                     ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(imageUrlCtrl.text, height: 100, fit: BoxFit.cover)),
-                  ]
-                ],
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-            FilledButton(
-              onPressed: () async {
-                if (titleCtrl.text.isEmpty || costCtrl.text.isEmpty) return;
-                // final cost = int.tryParse(costCtrl.text) ?? 0;
-                final costStr = costCtrl.text.trim();
-                final int cost = int.tryParse(costStr) ?? 0;
-                // final duration = selectedType == RewardType.screenTime ? (int.tryParse(durationCtrl.text) ?? 0) : null;
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+              FilledButton(
+                onPressed: () async {
+                  if (titleCtrl.text.isEmpty || costCtrl.text.isEmpty) return;
 
-                // Обработка длительности
-                int duration = 0;
-                if (selectedType == RewardType.screenTime) {
-                  final durationStr = durationCtrl.text.trim();
-                  duration = int.tryParse(durationStr) ?? 0;
-                }
+                  final costStr = costCtrl.text.trim();
+                  final int cost = int.tryParse(costStr) ?? 0;
 
-                // Обработка URL картинки
-                String? imageUrl;
-                if (selectedType == RewardType.gift) {
-                  imageUrl = imageUrlCtrl.text.trim();
-                  if (imageUrl.isEmpty) imageUrl = null;
-                }
-                
-                final newReward = Reward(
-                  id: reward?.id ?? '',
-                  parentId: reward?.parentId ?? ref.read(authStateProvider).value!.uid,
-                  type: selectedType,
-                  title: titleCtrl.text,
-                  description: descCtrl.text,
-                  costInStars: cost,
-                  durationMinutes: duration,
-                  imageUrl: imageUrl,
-                  createdAt: reward?.createdAt ?? DateTime.now(),
-                );
+                  int duration = 0;
+                  if (selectedType == RewardType.screenTime) {
+                    final durationStr = durationCtrl.text.trim();
+                    duration = int.tryParse(durationStr) ?? 0;
+                  }
 
-                bool success;
-                if (reward == null) {
-                  success = await ref.read(rewardControllerProvider.notifier).addReward(newReward);
-                } else {
-                  success = await ref.read(rewardControllerProvider.notifier).updateReward(newReward);
-                }
+                  String? imageUrl;
+                  if (selectedType == RewardType.gift && imageUrlCtrl.text.isNotEmpty) {
+                    imageUrl = imageUrlCtrl.text;
+                  }
 
-                if (success && ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Сохранить'),
-            ),
-          ],
-        ),
+                  final newReward = Reward(
+                    id: reward?.id ?? '',
+                    parentId: reward?.parentId ?? ref.read(authStateProvider).value!.uid,
+                    type: selectedType,
+                    title: titleCtrl.text,
+                    description: descCtrl.text,
+                    costInStars: cost,
+                    durationMinutes: duration,
+                    imageUrl: imageUrl,
+                    createdAt: reward?.createdAt ?? DateTime.now(),
+                  );
+
+                  bool success;
+                  if (reward == null) {
+                    success = await ref.read(rewardControllerProvider.notifier).addReward(newReward);
+                  } else {
+                    success = await ref.read(rewardControllerProvider.notifier).updateReward(newReward);
+                  }
+
+                  if (success && ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Сохранить'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
