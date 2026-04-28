@@ -32,8 +32,13 @@ class RewardRepository {
 
   /// Создать награду
   Future<void> addReward(Reward reward) async {
-    if (currentUid == null) throw Exception('Не авторизован');
-    await _rewardsCollection.add(reward.toMap());
+    final parentId = currentUid;
+    if (parentId == null) throw Exception('Родитель не авторизован');
+
+    // ВАЖНО: Принудительно устанавливаем parentId перед сохранением
+    final rewardWithParent = reward.copyWith(parentId: parentId);
+
+    await _rewardsCollection.add(rewardWithParent.toMap());
   }
 
   /// Обновить награду (например, отметить подарок как выполненное или изменить цену)

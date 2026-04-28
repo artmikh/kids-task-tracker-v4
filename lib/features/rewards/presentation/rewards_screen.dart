@@ -12,9 +12,24 @@ final rewardRepositoryProvider = Provider<RewardRepository>((ref) {
   return RewardRepository();
 });
 
+// final myRewardsProvider = StreamProvider<List<Reward>>((ref) {
+//   final repo = ref.watch(rewardRepositoryProvider);
+//   return repo.getMyRewardsStream();
+// });
+
 final myRewardsProvider = StreamProvider<List<Reward>>((ref) {
-  final repo = ref.watch(rewardRepositoryProvider);
-  return repo.getMyRewardsStream();
+  // Следим за состоянием авторизации. При смене пользователя этот блок выполнится заново
+  final userAsync = ref.watch(authStateProvider);
+  
+  return userAsync.when(
+    data: (user) {
+      if (user == null) return Stream.value([]);
+      final repo = ref.watch(rewardRepositoryProvider);
+      return repo.getMyRewardsStream();
+    },
+    loading: () => const Stream.empty(), // Или можно вернуть поток с ошибкой, но лучше пустой
+    error: (_, __) => const Stream.empty(),
+  );
 });
 
 final rewardControllerProvider = StateNotifierProvider<RewardController, RewardState>((ref) {
