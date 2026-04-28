@@ -1,12 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/auth_repository.dart';
-import '../domain/user_model.dart';
+// Импортируем новую модель профиля вместо старой AppUser
+import '../../user/domain/user_profile.dart'; 
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository();
 });
 
-final authStateProvider = StreamProvider<AppUser?>((ref) {
+// Теперь стрим возвращает UserProfile?
+final authStateProvider = StreamProvider<UserProfile?>((ref) {
   final repository = ref.watch(authRepositoryProvider);
   return repository.authStateChanges;
 });
@@ -46,10 +48,12 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> signUp(String email, String password, String name) async {
+  // Обновленный метод регистрации: добавлен параметр role
+  Future<bool> signUp(String email, String password, String name, UserRole role) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _repository.createUserWithEmailAndPassword(email, password, name);
+      // Передаем роль в репозиторий
+      await _repository.createUserWithEmailAndPassword(email, password, name, role);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
