@@ -189,7 +189,7 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(isParent ? 'Семья (Родитель)' : 'Семья (Ребенок)', style: const TextStyle(fontSize: 14)),
-            Text(widget.user.displayName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+            Text(widget.user.displayName, style: const TextStyle(fontSize: 14)),
           ],
         ),
         leading: IconButton(
