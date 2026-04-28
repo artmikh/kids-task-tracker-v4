@@ -21,8 +21,7 @@ class FamilyRepository {
   String? get currentUid => _auth.currentUser?.uid;
   String? get currentEmail => _auth.currentUser?.email;
 
-  // ... (метод sendInvitation и get...Stream без изменений, оставляем как было) ...
-  
+  /// Отправить приглашение
   Future<void> sendInvitation(String targetEmail, InvitationType type) async {
     final uid = currentUid;
     if (uid == null) throw Exception('Пользователь не авторизован');
@@ -31,8 +30,11 @@ class FamilyRepository {
     if (!senderDoc.exists) throw Exception('Профиль отправителя не найден');
     final senderName = UserProfile.fromFirestore(senderDoc).displayName;
 
-    if (targetEmail == currentEmail) throw Exception('Нельзя отправить приглашение самому себе');
+    if (targetEmail == currentEmail) {
+      throw Exception('Нельзя отправить приглашение самому себе');
+    }
 
+    // Проверка на дубликаты активных приглашений
     final existingQuery = await _invitationsCollection
         .where('toEmail', isEqualTo: targetEmail)
         .where('fromUid', isEqualTo: uid)
@@ -40,7 +42,9 @@ class FamilyRepository {
         .limit(1)
         .get();
 
-    if (existingQuery.docs.isNotEmpty) throw Exception('Приглашение уже отправлено');
+    if (existingQuery.docs.isNotEmpty) {
+      throw Exception('Приглашение этому пользователю уже отправлено');
+    }
 
     final invitation = FamilyInvitation(
       id: '', 
@@ -55,93 +59,35 @@ class FamilyRepository {
     await _invitationsCollection.add(invitation.toMap());
   }
 
+  /// Входящие приглашения
   Stream<List<FamilyInvitation>> getIncomingInvitationsStream() {
     final email = currentEmail;
     if (email == null) return Stream.value([]);
+
     return _invitationsCollection
         .where('toEmail', isEqualTo: email)
         .where('status', isEqualTo: InvitationStatus.pending.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => FamilyInvitation.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => FamilyInvitation.fromFirestore(doc))
+            .toList());
   }
 
+  /// Исходящие приглашения
   Stream<List<FamilyInvitation>> getOutgoingInvitationsStream() {
     final uid = currentUid;
     if (uid == null) return Stream.value([]);
+
     return _invitationsCollection
         .where('fromUid', isEqualTo: uid)
         .where('status', isEqualTo: InvitationStatus.pending.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => FamilyInvitation.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => FamilyInvitation.fromFirestore(doc))
+            .toList());
   }
 
-  /// Получить список детей для текущего родителя
-  Stream<List<UserProfile>> getMyChildrenStream() {
-    final parentId = currentUid;
-    if (parentId == null) return Stream.value([]);
-
-    return _linksCollection
-        .where('parentId', isEqualTo: parentId)
-        .snapshots()
-        .asyncMap((linksSnapshot) async {
-          final childIds = linksSnapshot.docs
-              .map((doc) => FamilyLink.fromFirestore(doc).childId)
-              .toList();
-
-          if (childIds.isEmpty) return [];
-
-          // Ждем загрузки всех профилей
-          final futures = childIds.map((id) => _usersCollection.doc(id).get()).toList();
-          final docsSnapshot = await Future.wait(futures);
-
-          return docsSnapshot
-              .where((doc) => doc.exists)
-              .map((doc) => UserProfile.fromFirestore(doc))
-              .toList();
-        });
-  }
-
-/// Получить список родителей для текущего ребенка
-  Stream<List<UserProfile>> getMyParentsStream() {
-    final childId = currentUid;
-    if (childId == null) return Stream.value([]);
-
-    return _linksCollection
-        .where('childId', isEqualTo: childId)
-        .snapshots()
-        .asyncMap((linksSnapshot) async {
-          final parentIds = linksSnapshot.docs
-              .map((doc) => FamilyLink.fromFirestore(doc).parentId)
-              .toList();
-
-          if (parentIds.isEmpty) return [];
-
-          final futures = parentIds.map((id) => _usersCollection.doc(id).get()).toList();
-          final docsSnapshot = await Future.wait(futures);
-
-          return docsSnapshot
-              .where((doc) => doc.exists)
-              .map((doc) => UserProfile.fromFirestore(doc))
-              .toList();
-        });
-  }
-
-  // Stream<List<UserProfile>> getMyParentsStream() {
-  //   final childId = currentUid;
-  //   if (childId == null) return Stream.value([]);
-  //   return _linksCollection.where('childId', isEqualTo: childId).snapshots().asyncMap((snapshot) async {
-  //     final parentIds = snapshot.docs.map((doc) => FamilyLink.fromFirestore(doc).parentId).toList();
-  //     if (parentIds.isEmpty) return [];
-  //     final profiles = <UserProfile>[];
-  //     for (var id in parentIds) {
-  //       final doc = await _usersCollection.doc(id).get();
-  //       if (doc.exists) profiles.add(UserProfile.fromFirestore(doc));
-  //     }
-  //     return profiles;
-  //   });
-  // }
-
-  /// ИСПРАВЛЕНО: Логика принятия приглашения
+  /// Принять приглашение
   Future<void> acceptInvitation(String invitationId) async {
     final email = currentEmail;
     if (email == null) throw Exception('Пользователь не авторизован');
@@ -155,47 +101,29 @@ class FamilyRepository {
       final invitation = FamilyInvitation.fromFirestore(inviteDoc);
       if (invitation.toEmail != email) throw Exception('Это приглашение не для вас');
 
-      // Обновляем статус
       transaction.update(inviteRef, {
         'status': InvitationStatus.accepted.name,
-        'respondedAt': Timestamp.fromDate(DateTime.now()),
+        'respondedAt': FieldValue.serverTimestamp(),
       });
 
-      // Находим UID принявшего (получателя)
-      final receiverQuery = await _usersCollection.where('email', isEqualTo: email).limit(1).get();
+      final receiverQuery = await _usersCollection
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      
       if (receiverQuery.docs.isEmpty) throw Exception('Пользователь не найден');
       final receiverUid = receiverQuery.docs.first.id;
-      final receiverProfile = UserProfile.fromFirestore(receiverQuery.docs.first);
 
-      String? parentId;
-      String? childId;
+      String parentId, childId;
 
-      // ОПРЕДЕЛЯЕМ РОЛИ ПРАВИЛЬНО
       if (invitation.type == InvitationType.parentToChild) {
-        // Отправитель - родитель, Получатель - ребенок
         parentId = invitation.fromUid;
         childId = receiverUid;
-        
-        // Дополнительная проверка: действительно ли получатель ребенок?
-        if (receiverProfile.role != UserRole.child) {
-           // Можно выбросить ошибку или просто проигнорировать, но лучше предупредить
-           print('Warning: User accepting parent-to-child invite is not a child role');
-        }
-      } else if (invitation.type == InvitationType.childToParent) {
-        // Отправитель - ребенок, Получатель - родитель
+      } else {
+        parentId = receiverUid; 
         childId = invitation.fromUid;
-        parentId = receiverUid;
-        
-        if (receiverProfile.role != UserRole.parent) {
-           print('Warning: User accepting child-to-parent invite is not a parent role');
-        }
       }
-
-      if (parentId == null || childId == null) {
-        throw Exception('Не удалось определить роли для связи');
-      }
-
-      // Проверка дубликата
+      
       final existingLink = await _linksCollection
           .where('parentId', isEqualTo: parentId)
           .where('childId', isEqualTo: childId)
@@ -214,20 +142,94 @@ class FamilyRepository {
     });
   }
 
+  /// Отклонить приглашение
   Future<void> rejectInvitation(String invitationId) async {
     final email = currentEmail;
     if (email == null) throw Exception('Пользователь не авторизован');
+
     final inviteDoc = await _invitationsCollection.doc(invitationId).get();
     if (!inviteDoc.exists) return;
+
     final invitation = FamilyInvitation.fromFirestore(inviteDoc);
     if (invitation.toEmail != email) throw Exception('Это приглашение не для вас');
+
     await _invitationsCollection.doc(invitationId).update({
       'status': InvitationStatus.rejected.name,
-      'respondedAt': Timestamp.fromDate(DateTime.now()),
+      'respondedAt': FieldValue.serverTimestamp(),
     });
   }
   
-  Future<void> removeLink(String linkId) async {
-    await _linksCollection.doc(linkId).delete();
+  /// Получить список детей для текущего родителя
+  Stream<List<UserProfile>> getMyChildrenStream() {
+    final parentId = currentUid;
+    // Если пользователь разлогинился, сразу возвращаем пустой поток
+    if (parentId == null) return Stream.value([]);
+
+    return _linksCollection
+        .where('parentId', isEqualTo: parentId)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          if (snapshot.docs.isEmpty) return <UserProfile>[];
+
+          final List<UserProfile> profiles = [];
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            // Безопасное приведение типа
+            if (data is Map<String, dynamic>) {
+              final childId = data['childId'] as String?;
+              if (childId != null) {
+                final childDoc = await _usersCollection.doc(childId).get();
+                if (childDoc.exists) {
+                  final childData = childDoc.data();
+                  if (childData is Map<String, dynamic>) {
+                     // Опционально: проверяем роль, чтобы быть уверенными
+                    if (childData['role'] == 'child') {
+                      profiles.add(UserProfile.fromFirestore(childDoc));
+                    } else {
+                      // Если роль не совпадает, все равно добавляем, но можно логировать warning
+                      profiles.add(UserProfile.fromFirestore(childDoc));
+                    }
+                  }
+                }
+              }
+            }
+          }
+          return profiles;
+        });
+  }
+
+  /// Получить список родителей для текущего ребенка
+  Stream<List<UserProfile>> getMyParentsStream() {
+    final childId = currentUid;
+    if (childId == null) return Stream.value([]);
+
+    return _linksCollection
+        .where('childId', isEqualTo: childId)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          if (snapshot.docs.isEmpty) return <UserProfile>[];
+
+          final List<UserProfile> profiles = [];
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            if (data is Map<String, dynamic>) {
+              final parentId = data['parentId'] as String?;
+              if (parentId != null) {
+                final parentDoc = await _usersCollection.doc(parentId).get();
+                if (parentDoc.exists) {
+                  final parentData = parentDoc.data();
+                  if (parentData is Map<String, dynamic>) {
+                    if (parentData['role'] == 'parent') {
+                      profiles.add(UserProfile.fromFirestore(parentDoc));
+                    } else {
+                      profiles.add(UserProfile.fromFirestore(parentDoc));
+                    }
+                  }
+                }
+              }
+            }
+          }
+          return profiles;
+        });
   }
 }
