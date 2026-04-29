@@ -367,6 +367,7 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
   }
 
   void _showRewardDialog(BuildContext context, WidgetRef ref, {Reward? reward}) {
+    final formKey = GlobalKey<FormState>();
     final titleCtrl = TextEditingController(text: reward?.title ?? '');
     final descCtrl = TextEditingController(text: reward?.description ?? '');
     final costCtrl = TextEditingController(text: reward?.costInStars.toString() ?? '');
@@ -385,138 +386,158 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
           return AlertDialog(
             title: Text(reward == null ? 'Новая награда' : 'Редактировать награду'),
             content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<RewardType>(
-                    value: selectedType,
-                    decoration: const InputDecoration(labelText: 'Тип награды'),
-                    items: const [
-                      DropdownMenuItem(value: RewardType.points, child: Text('Баллы / Звезды')),
-                      DropdownMenuItem(value: RewardType.gift, child: Text('Реальный подарок')),
-                      DropdownMenuItem(value: RewardType.screenTime, child: Text('Время гаджета')),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() => selectedType = val!);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: 'Название'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(labelText: 'Описание'),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: costCtrl,
-                    decoration: const InputDecoration(labelText: 'Стоимость (звезды)', prefixIcon: Icon(Icons.star)),
-                    keyboardType: TextInputType.number,
-                  ),
-                  
-                  // УСЛОВНОЕ ПОЛЕ: Время
-                  if (selectedType == RewardType.screenTime) ...[
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: durationCtrl,
-                      decoration: const InputDecoration(labelText: 'Длительность (минуты)', prefixIcon: Icon(Icons.timer)),
-                      keyboardType: TextInputType.number,
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<RewardType>(
+                      value: selectedType,
+                      decoration: const InputDecoration(labelText: 'Тип награды', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: RewardType.points, child: Text('Баллы / Звезды')),
+                        DropdownMenuItem(value: RewardType.gift, child: Text('Реальный подарок')),
+                        DropdownMenuItem(value: RewardType.screenTime, child: Text('Время гаджета')),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() => selectedType = val!);
+                        formKey.currentState?.validate();
+                      },
                     ),
-                  ],
-
-                  // УСЛОВНОЕ ПОЛЕ: Картинка для подарка
-                  if (selectedType == RewardType.gift) ...[
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: imageUrlCtrl,
-                            decoration: const InputDecoration(labelText: 'Изображение', hintText: 'URL или файл'),
-                            enabled: false, // Только чтение, выбор через кнопку
+                    TextFormField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(labelText: 'Название *', border: OutlineInputBorder()),
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Введите название' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(labelText: 'Описание', border: OutlineInputBorder()),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: costCtrl,
+                      decoration: const InputDecoration(labelText: 'Стоимость (звезды)', prefixIcon: Icon(Icons.star), border: OutlineInputBorder()),
+                      keyboardType: TextInputType.number,
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) return 'Укажите стоимость';
+                        if (int.tryParse(val) == null) return 'Только числа';
+                        if (int.parse(val) <= 0) return 'Стоимость > 0';
+                        return null;
+                      },
+                    ),
+                    
+                    // УСЛОВНОЕ ПОЛЕ: Время
+                    if (selectedType == RewardType.screenTime) ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: durationCtrl,
+                        decoration: const InputDecoration(labelText: 'Длительность (минуты)', prefixIcon: Icon(Icons.timer), border: OutlineInputBorder()),
+                        keyboardType: TextInputType.number,
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Укажите время';
+                          if (int.tryParse(val) == null) return 'Только числа';
+                          if (int.parse(val) <= 0) return 'Время > 0';
+                          return null;
+                        },
+                      ),
+                    ],
+
+                    // УСЛОВНОЕ ПОЛЕ: Картинка для подарка
+                    if (selectedType == RewardType.gift) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: imageUrlCtrl,
+                              decoration: const InputDecoration(labelText: 'Изображение', hintText: 'URL или файл'),
+                              enabled: false, // Только чтение, выбор через кнопку
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.camera_alt),
+                            onPressed: () async {
+                              try {
+                                final pickedFile = await ImagePicker().pickImage(
+                                  source: ImageSource.gallery,
+                                  // СЖАТИЕ: Устанавливаем качество 20% (достаточно для превью, сильно уменьшает размер)
+                                  imageQuality: 20, 
+                                  maxWidth: 400, // Ограничиваем ширину
+                                  maxHeight: 400, // Ограничиваем высоту
+                                );
+
+                                if (pickedFile != null) {
+                                  // Читаем байты
+                                  final bytes = await pickedFile.readAsBytes();
+                                  // Кодируем в Base64
+                                  final base64Image = base64Encode(bytes);
+                                  
+                                  // Обновляем состояние диалога
+                                  setDialogState(() {
+                                    imageUrlCtrl.text = base64Image; // Сохраняем ТОЛЬКО чистый Base64
+                                  });
+                                }
+                              } catch (e) {
+                                debugPrint('Ошибка загрузки изображения: $e');
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Не удалось загрузить фото: $e')),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      // Предпросмотр изображения
+                      if (imageUrlCtrl.text.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 150,
+                            width: double.infinity,
+                            color: Colors.grey[200],
+                            child: kIsWeb || isBase64Preview
+                                ? Image.memory(
+                                    base64Decode(imageUrlCtrl.text.split(',').last),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка изображения')),
+                                  )
+                                : Image.network(
+                                    imageUrlCtrl.text,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка загрузки')),
+                                  ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.camera_alt),
-                          onPressed: () async {
-                            try {
-                              final pickedFile = await ImagePicker().pickImage(
-                                source: ImageSource.gallery,
-                                // СЖАТИЕ: Устанавливаем качество 20% (достаточно для превью, сильно уменьшает размер)
-                                imageQuality: 20, 
-                                maxWidth: 400, // Ограничиваем ширину
-                                maxHeight: 400, // Ограничиваем высоту
-                              );
-
-                              if (pickedFile != null) {
-                                // Читаем байты
-                                final bytes = await pickedFile.readAsBytes();
-                                // Кодируем в Base64
-                                final base64Image = base64Encode(bytes);
-                                
-                                // Обновляем состояние диалога
-                                setDialogState(() {
-                                  imageUrlCtrl.text = base64Image; // Сохраняем ТОЛЬКО чистый Base64
-                                });
-                              }
-                            } catch (e) {
-                              debugPrint('Ошибка загрузки изображения: $e');
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Не удалось загрузить фото: $e')),
-                                );
-                              }
-                            }
+                        TextButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              imageUrlCtrl.clear();
+                              isBase64Preview = false;
+                            });
                           },
+                          child: const Text('Удалить фото', style: TextStyle(color: Colors.red)),
                         ),
                       ],
-                    ),
-                    // Предпросмотр изображения
-                    if (imageUrlCtrl.text.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          height: 150,
-                          width: double.infinity,
-                          color: Colors.grey[200],
-                          child: kIsWeb || isBase64Preview
-                              ? Image.memory(
-                                  base64Decode(imageUrlCtrl.text.split(',').last),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка изображения')),
-                                )
-                              : Image.network(
-                                  imageUrlCtrl.text,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Center(child: Text('Ошибка загрузки')),
-                                ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          setDialogState(() {
-                            imageUrlCtrl.clear();
-                            isBase64Preview = false;
-                          });
-                        },
-                        child: const Text('Удалить фото', style: TextStyle(color: Colors.red)),
-                      ),
                     ],
                   ],
-                ],
+                ),
               ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
               FilledButton(
                 onPressed: () async {
-                  if (titleCtrl.text.isEmpty || costCtrl.text.isEmpty) return;
+                  if (!formKey.currentState!.validate()) {
+                    return; // Если есть ошибки, выходим и не закрываем диалог
+                  }
+                  // if (titleCtrl.text.isEmpty || costCtrl.text.isEmpty) return;
 
                   final costStr = costCtrl.text.trim();
                   final int cost = int.tryParse(costStr) ?? 0;
