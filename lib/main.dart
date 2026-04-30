@@ -17,6 +17,7 @@ import 'features/home/presentation/home_screen.dart'; // Экран родите
 import 'features/children/presentation/child_home_screen.dart'; // Экран ребенка (создадим ниже)
 import 'features/auth/presentation/auth_provider.dart';
 import 'features/rewards/presentation/rewards_screen.dart';
+import 'features/tasks/presentation/parent_tasks_screen.dart';
 import 'features/user/domain/user_profile.dart'; // Для UserRole
 
 // Конфигурация для веба
@@ -91,6 +92,21 @@ class KidsTaskTrackerApp extends ConsumerWidget {
                 path: '/child-home',
                 name: 'childHome',
                 pageBuilder: (context, state) => const NoTransitionPage(child: ChildHomeScreen()),
+              ),
+              GoRoute(
+                path: '/tasks/:childId',
+                name: 'parentTasks',
+                pageBuilder: (context, state) {
+                  final childId = state.pathParameters['childId']!;
+                  // Extra данные можно достать через state.extra, если передавали объект, 
+                  // но для имени можно передать просто строку или достать из репозитория. 
+                  // Для простоты передадим имя через extra при push, а здесь кастуем.
+                  final childName = (state.extra as UserProfile?)?.displayName ?? 'Ребенок';
+                  
+                  return NoTransitionPage(
+                    child: ParentTasksScreen(childId: childId, childName: childName),
+                  );
+                },
               ),
               // Добавьте сюда будущие экраны ребенка (магазин, профиль)
             ],
