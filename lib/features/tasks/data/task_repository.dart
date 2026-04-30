@@ -61,10 +61,26 @@ class TaskRepository {
   /// Изменение статуса задачи с начислением наград
   /// Если статус меняется на 'done', начисляются звезды.
   /// Если статус меняется с 'done' на другой, звезды списываются (опционально, сейчас просто не начисляем повторно).
-  Future<void> updateTaskStatus(Task task, TaskStatus newStatus) async {
+    Future<void> updateTaskStatus(String taskId, TaskStatus newStatus) async {
     await _firestore.runTransaction((transaction) async {
-      final taskRef = _tasksCollection.doc(task.id);
+      final taskRef = _tasksCollection.doc(taskId); // Используем taskId
+      final taskDoc = await transaction.get(taskRef);
+
+      if (!taskDoc.exists) {
+        throw Exception('Задача не найдена');
+      }
+
+      // Получаем текущие данные задачи
+      final taskData = taskDoc.data() as Map<String, dynamic>;
+      final currentStatusName = taskData['status'] as String;
+      final currentStatus = TaskStatus.values.firstWhere(
+        (e) => e.name == currentStatusName,
+        orElse: () => TaskStatus.todo,
+      );
       
+      final childId = taskData['childId'] as String;
+      final rewardStars = (taskData['rewardStars'] as int?) ?? 0;
+
       // 1. Обновляем задачу
       final updateData = {
         'status': newStatus.name,
@@ -74,21 +90,38 @@ class TaskRepository {
       
       transaction.update(taskRef, updateData);
 
-      // 2. Если задача выполнена, начисляем звезды ребенку
-      if (newStatus == TaskStatus.done && task.status != TaskStatus.done) {
-        final userRef = _usersCollection.doc(task.childId);
+      // 2. Начисляем награду, если статус сменился на "выполнено"
+      // Проверяем, что задача не была выполнена ранее
+      if (newStatus == TaskStatus.done && currentStatus != TaskStatus.done) {
+        final userRef = _usersCollection.doc(childId);
         final userDoc = await transaction.get(userRef);
         
         if (userDoc.exists) {
-          final data = userDoc.data() as Map<String, dynamic>?;
-          final currentStars = (data?['stars'] as int?) ?? 0;
+          final userData = userDoc.data() as Map<String, dynamic>?;
+          final currentStars = (userData?['stars'] as int?) ?? 0;
+          
           transaction.update(userRef, {
-            'stars': currentStars + task.rewardStars,
+            'stars': currentStars + rewardStars,
           });
         }
       } 
-      // 3. (Опционально) Если убрали статус "выполнено", можно списать звезды. 
-      // Пока оставим без списания, чтобы не усложнять логику для MVP.
+      // Опционально: Можно реализовать возврат звезд, если статус снят с "выполнено"
+      else if (newStatus != TaskStatus.done && currentStatus == TaskStatus.done) {
+         final userRef = _usersCollection.doc(childId);
+         final userDoc = await transaction.get(userRef);
+         
+         if (userDoc.exists) {
+            final userData = userDoc.data() as Map<String, dynamic>?;
+            final currentStars = (userData?['stars'] as int?) ?? 0;
+            
+            // Не уходим в минус
+            final newStars = (currentStars - rewardStars).clamp(0, currentStars); 
+            
+            transaction.update(userRef, {
+              'stars': newStars,
+            });
+         }
+      }
     });
   }
   

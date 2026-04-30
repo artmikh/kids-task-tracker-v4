@@ -50,9 +50,8 @@ class TaskController extends StateNotifier<TaskState> {
   }
 
   Future<void> updateStatus(String taskId, TaskStatus status) async {
-    final taskToUpdate = tasks.firstWhere((t) => t.id == taskId, orElse: () => throw Exception('Task not found'));
     try { 
-      await _repo.updateTaskStatus(taskToUpdate, status); 
+      await _repo.updateTaskStatus(taskId, status); 
     }
     catch (e) { state = state.copyWith(error: e.toString()); }
   }
