@@ -51,7 +51,7 @@ class TaskController extends StateNotifier<TaskState> {
 
   Future<void> updateStatus(String taskId, TaskStatus status) async {
     try { 
-      await _repo.updateTaskStatus(taskId, status); 
+      await _repo.updateTaskStatus(taskId, status);  
     }
     catch (e) { state = state.copyWith(error: e.toString()); }
   }
@@ -71,6 +71,7 @@ class ParentTasksScreen extends ConsumerStatefulWidget {
 }
 
 class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
+  TaskStatus? selectedFilter;
   @override
   void initState() {
     super.initState();
@@ -85,82 +86,192 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
     final state = ref.watch(taskControllerProvider(widget.childId));
     final tasksAsync = ref.watch(tasksStreamProvider(widget.childId));
 
+    // Обработка ошибок
     if (state.error != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.error!), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.error!), backgroundColor: Colors.red),
+          );
           ref.read(taskControllerProvider(widget.childId).notifier).clearError();
         }
       });
     }
 
+    
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Задачи: ${widget.childName}'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => ref.read(authRepositoryProvider).signOut(),
+          ),
+        ],
       ),
-      body: tasksAsync.when(
-        data: (tasks) {
-          if (tasks.isEmpty) {
-            return Center(
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.list_alt, size: 64, color: theme.disabledColor),
-                const SizedBox(height: 16),
-                Text('Задач пока нет', style: theme.textTheme.bodyLarge),
-                const SizedBox(height: 8),
-                Text('Создайте первую задачу для мотивации!', style: theme.textTheme.bodyMedium?.copyWith(color: theme.disabledColor)),
-              ]),
-            );
-          }
-          
-          // Группировка по статусам для наглядности (опционально, пока просто список)
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: tasks.length,
-            itemBuilder: (ctx, i) {
-              final task = tasks[i];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: _getStatusIcon(task.status),
-                  title: Text(task.title, style: TextStyle(decoration: task.status == TaskStatus.done ? TextDecoration.lineThrough : null)),
-                  subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    if (task.description.isNotEmpty) Text(task.description, maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      const Icon(Icons.star, size: 14, color: Colors.amber),
-                      const SizedBox(width: 4),
-                      Text('${task.rewardStars} звезд', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      const Spacer(),
-                      Text(_getStatusText(task.status), style: TextStyle(fontSize: 12, color: _getStatusColor(task.status))),
-                    ]),
-                  ]),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (val) {
-                      if (val == 'edit') { /* TODO: Редактирование */ }
-                      if (val == 'delete') _confirmDelete(context, task.id);
-                      if (val == 'todo') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.todo);
-                      if (val == 'in_progress') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.inProgress);
-                      if (val == 'done') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.done);
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'todo', child: Text('Вернуть в ожидание')),
-                      const PopupMenuItem(value: 'in_progress', child: Text('В процессе')),
-                      const PopupMenuItem(value: 'done', child: Text('Завершено')),
-                      const PopupMenuDivider(),
-                      const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-                      const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Colors.red))),
-                    ],
+      body: Column(
+        children: [
+          // --- Блок фильтров ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('Все'),
+                    selected: selectedFilter == null,
+                    onSelected: (_) => setState(() => selectedFilter = null),
                   ),
-                ),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Ошибка: $e')),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Ожидание'),
+                    selected: selectedFilter == TaskStatus.todo,
+                    onSelected: (_) => setState(() => selectedFilter = TaskStatus.todo),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('В процессе'),
+                    selected: selectedFilter == TaskStatus.inProgress,
+                    onSelected: (_) => setState(() => selectedFilter = TaskStatus.inProgress),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Готово'),
+                    selected: selectedFilter == TaskStatus.done,
+                    onSelected: (_) => setState(() => selectedFilter = TaskStatus.done),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Container(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          //   child: SingleChildScrollView(
+          //     scrollDirection: Axis.horizontal,
+          //     child: Row(
+          //       children: [
+          //         _FilterChip(
+          //           label: 'Все',
+          //           isSelected: selectedFilter == null,
+          //           onSelected: (_) => setState(() => selectedFilter = null),
+          //         ),
+          //         const SizedBox(width: 8),
+          //         _FilterChip(
+          //           label: 'Ожидание',
+          //           isSelected: selectedFilter == TaskStatus.todo,
+          //           onSelected: (_) => setState(() => selectedFilter = TaskStatus.todo),
+          //         ),
+          //         const SizedBox(width: 8),
+          //         _FilterChip(
+          //           label: 'В процессе',
+          //           isSelected: selectedFilter == TaskStatus.inProgress,
+          //           onSelected: (_) => setState(() => selectedFilter = TaskStatus.inProgress),
+          //         ),
+          //         const SizedBox(width: 8),
+          //         _FilterChip(
+          //           label: 'Готово',
+          //           isSelected: selectedFilter == TaskStatus.done,
+          //           onSelected: (_) => setState(() => selectedFilter = TaskStatus.done),
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
+          // --- Список задач ---
+          Expanded(
+            child: tasksAsync.when(
+              data: (tasks) {
+                // Фильтрация
+                final filteredTasks = selectedFilter == null
+                    ? tasks
+                    : tasks.where((t) => t.status == selectedFilter).toList();
+
+                if (filteredTasks.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.list_alt, size: 64, color: theme.disabledColor),
+                        const SizedBox(height: 16),
+                        Text(
+                          selectedFilter == null ? 'Задач пока нет' : 'Нет задач в этом статусе',
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filteredTasks.length,
+                  itemBuilder: (ctx, i) {
+                    final task = filteredTasks[i];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        leading: _getStatusIcon(task.status),
+                        title: Text(
+                          task.title,
+                          style: TextStyle(
+                            decoration: task.status == TaskStatus.done ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (task.description.isNotEmpty)
+                              Text(task.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.star, size: 14, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Text('${task.rewardStars} звезд', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                const Spacer(),
+                                Text(_getStatusText(task.status), style: TextStyle(fontSize: 12, color: _getStatusColor(task.status))),
+                              ],
+                            ),
+                          ],
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (val) {
+                            if (val == 'edit') {
+                              _showTaskDialog(context, ref, task: task);
+                            }
+                            if (val == 'delete') _confirmDelete(context, task.id);
+                            if (val == 'todo') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.todo);
+                            if (val == 'in_progress') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.inProgress);
+                            if (val == 'done') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.done);
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(value: 'todo', child: Text('Вернуть в ожидание')),
+                            const PopupMenuItem(value: 'in_progress', child: Text('В процессе')),
+                            const PopupMenuItem(value: 'done', child: Text('Завершено')),
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
+                            const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Colors.red))),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Ошибка: $e')),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showTaskDialog(context),
+        onPressed: () => _showTaskDialog(context, ref),
         child: const Icon(Icons.add),
       ),
     );
@@ -202,37 +313,134 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
     ));
   }
 
-  void _showTaskDialog(BuildContext context) {
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final starsCtrl = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+    void _showTaskDialog(BuildContext context, WidgetRef ref, {Task? task}) {
+    // Инициализация контроллеров данными задачи или пустыми значениями
+    final titleCtrl = TextEditingController(text: task?.title ?? '');
+    final descCtrl = TextEditingController(text: task?.description ?? '');
+    final starsCtrl = TextEditingController(text: task?.rewardStars.toString() ?? '0');
+    
+    // Начальный статус (по умолчанию todo, если новая задача)
+    TaskStatus initialStatus = task?.status ?? TaskStatus.todo;
 
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Новая задача'),
-      content: SingleChildScrollView(
-        child: Form(key: formKey, child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextFormField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Название *'), validator: (v) => v!.isEmpty ? 'Обязательно' : null),
-          const SizedBox(height: 16),
-          TextFormField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Описание'), maxLines: 2),
-          const SizedBox(height: 16),
-          TextFormField(controller: starsCtrl, decoration: const InputDecoration(labelText: 'Награда (звезды) *', prefixIcon: Icon(Icons.star)), 
-            keyboardType: TextInputType.number, validator: (v) {
-              if (v!.isEmpty) return 'Обязательно';
-              if (int.tryParse(v) == null) return 'Только числа';
-              return null;
-            }),
-        ])),
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(task == null ? 'Новая задача' : 'Редактировать задачу'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: 'Название *', border: OutlineInputBorder()),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(labelText: 'Описание', border: OutlineInputBorder()),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: starsCtrl,
+                  decoration: const InputDecoration(labelText: 'Награда (звезды) *', prefixIcon: Icon(Icons.star), border: OutlineInputBorder()),
+                  keyboardType: TextInputType.number,
+                ),
+                // Если редактируем, можно показать текущий статус (опционально)
+                if (task != null) ...[
+                  const SizedBox(height: 16),
+                  Text('Текущий статус: ${_getStatusText(task.status)}', style: const TextStyle(fontStyle: FontStyle.italic)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+            FilledButton(
+              onPressed: () async {
+                if (titleCtrl.text.trim().isEmpty || starsCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заполните название и награду')));
+                  return;
+                }
+
+                final rewardStars = int.tryParse(starsCtrl.text.trim()) ?? 0;
+                if (rewardStars <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Награда должна быть больше 0')));
+                  return;
+                }
+
+                // Формируем объект задачи
+                final updatedTask = Task(
+                  id: task?.id ?? '', // Если ID есть - обновляем, если нет - создастся новый
+                  parentId: task?.parentId ?? ref.read(authStateProvider).value!.uid,
+                  childId: widget.childId,
+                  title: titleCtrl.text.trim(),
+                  description: descCtrl.text.trim(),
+                  rewardStars: rewardStars,
+                  status: task?.status ?? TaskStatus.todo, // Статус сохраняем старый или ставим новый
+                  createdAt: task?.createdAt ?? DateTime.now(),
+                  completedAt: task?.completedAt,
+                );
+
+                bool success;
+                if (task == null) {
+                  // --- СОЗДАНИЕ НОВОЙ ЗАДАЧИ ---
+                  // Вызываем метод addTask с параметрами, как он ожидает
+                  success = await ref.read(taskControllerProvider(widget.childId).notifier).addTask(
+                    titleCtrl.text.trim(),
+                    descCtrl.text.trim(),
+                    rewardStars,
+                  );
+                } else {
+                  // --- ОБНОВЛЕНИЕ СУЩЕСТВУЮЩЕЙ ЗАДАЧИ ---
+                  // Вариант А: Если в контроллере нет метода updateTask, вызываем репозиторий напрямую
+                  try {
+                    final repo = ref.read(taskRepositoryProvider); // Убедитесь, что этот провайдер экспортирован
+                    await repo.updateTask(Task(
+                      id: task.id,
+                      parentId: task.parentId,
+                      childId: task.childId,
+                      title: titleCtrl.text.trim(),
+                      description: descCtrl.text.trim(),
+                      rewardStars: rewardStars,
+                      status: task.status, // Статус не меняем при редактировании деталей
+                      createdAt: task.createdAt,
+                      completedAt: task.completedAt,
+                    ));
+                    success = true;
+                  } catch (e) {
+                    success = false;
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Ошибка обновления: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                  
+                  // Вариант Б (если решите добавить метод в контроллер позже):
+                  // success = await ref.read(taskControllerProvider(widget.childId).notifier).updateTask(updatedTask);
+                }
+
+                if (success && mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-        FilledButton(onPressed: () async {
-          if (!formKey.currentState!.validate()) return;
-          final stars = int.parse(starsCtrl.text);
-          final success = await ref.read(taskControllerProvider(widget.childId).notifier).addTask(titleCtrl.text, descCtrl.text, stars);
-          if (success && ctx.mounted) Navigator.pop(ctx);
-        }, child: const Text('Создать')),
-      ],
-    ));
+    );
+  }
+  Widget _FilterChip({required String label, required bool isSelected, required ValueChanged<bool> onSelected}) {
+    return FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: onSelected,
+      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      checkmarkColor: Theme.of(context).primaryColor,
+    );
   }
 }

@@ -120,7 +120,7 @@ class _ParentHomeView extends ConsumerWidget {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
                           onTap: () {
-                            context.push('/tasks/${child.uid}', extra: child);
+                            context.go('/tasks/${child.uid}', extra: child);
                             // ScaffoldMessenger.of(ctx).showSnackBar(
                             //   SnackBar(content: Text('Профиль: ${child.displayName}. Скоро здесь будут задачи!')),
                             // );
