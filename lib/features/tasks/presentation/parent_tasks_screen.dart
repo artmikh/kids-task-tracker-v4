@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../data/task_repository.dart';
 import '../domain/task_model.dart';
 import '../../auth/presentation/auth_provider.dart';
+import '../../family/presentation/family_provider.dart';
 import '../../user/domain/user_profile.dart';
 
 // Провайдеры
@@ -248,7 +249,10 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                             if (val == 'delete') _confirmDelete(context, task.id);
                             if (val == 'todo') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.todo);
                             if (val == 'in_progress') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.inProgress);
-                            if (val == 'done') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.done);
+                            if (val == 'done') {
+                              ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.done);
+                              ref.invalidate(myChildrenProvider);
+                            }
                           },
                           itemBuilder: (_) => [
                             const PopupMenuItem(value: 'todo', child: Text('Вернуть в ожидание')),

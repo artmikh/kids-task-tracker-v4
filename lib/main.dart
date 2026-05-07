@@ -72,7 +72,6 @@ class KidsTaskTrackerApp extends ConsumerWidget {
               return MainShell(child: child);
             },
             routes: [
-              // Маршруты внутри оболочки
               GoRoute(
                 path: '/home',
                 name: 'home',
@@ -98,17 +97,12 @@ class KidsTaskTrackerApp extends ConsumerWidget {
                 name: 'parentTasks',
                 pageBuilder: (context, state) {
                   final childId = state.pathParameters['childId']!;
-                  // Extra данные можно достать через state.extra, если передавали объект, 
-                  // но для имени можно передать просто строку или достать из репозитория. 
-                  // Для простоты передадим имя через extra при push, а здесь кастуем.
                   final childName = (state.extra as UserProfile?)?.displayName ?? 'Ребенок';
-                  
-                  return NoTransitionPage(
+                  return MaterialPage(
                     child: ParentTasksScreen(childId: childId, childName: childName),
                   );
                 },
               ),
-              // Добавьте сюда будущие экраны ребенка (магазин, профиль)
             ],
           ),
         ],
@@ -121,10 +115,10 @@ class KidsTaskTrackerApp extends ConsumerWidget {
           final isShellRoute = currentPath.startsWith('/home') || 
                                currentPath.startsWith('/family') || 
                                currentPath.startsWith('/rewards') ||
-                               currentPath.startsWith('/child-home');
+                               currentPath.startsWith('/child-home') ||
+                               currentPath.startsWith('/tasks/');
 
           if (!isLoggedIn && !isLoggingIn) return '/login';
-          
           if (isLoggedIn && isLoggingIn) {
             try {
               final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();

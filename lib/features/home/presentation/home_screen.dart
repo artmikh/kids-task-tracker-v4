@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_provider.dart';
 import '../../family/data/family_repository.dart';
-import '../../family/presentation/family_screen.dart'; // Для доступа к провайдерам детей
+import '../../family/presentation/family_provider.dart';
 import '../../user/domain/user_profile.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -35,32 +35,32 @@ class HomeScreen extends ConsumerWidget {
 
 // --- ВИД ДЛЯ РОДИТЕЛЯ ---
 
-class _ParentHomeView extends ConsumerWidget {
+class _ParentHomeView extends ConsumerStatefulWidget {
   final UserProfile user;
 
   const _ParentHomeView({required this.user});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ParentHomeView> createState() => _ParentHomeViewState();
+}
+
+class _ParentHomeViewState extends ConsumerState<_ParentHomeView> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh списка детей при каждом появлении экрана
+    Future.microtask(() => ref.invalidate(myChildrenProvider));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final childrenAsync = ref.watch(myChildrenProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Привет, ${user.displayName}!'),
+        title: Text('Привет, ${widget.user.displayName}!'),
         actions: [
-          // КНОПКА НАГРАДЫ
-          IconButton(
-            icon: const Icon(Icons.card_giftcard),
-            tooltip: 'Магазин наград',
-            onPressed: () => context.push('/rewards'),
-          ),
-          // КНОПКА СЕМЬИ
-          IconButton(
-            icon: const Icon(Icons.people),
-            tooltip: 'Семья',
-            onPressed: () => context.push('/family'),
-          ),
           // КНОПКА ВЫХОДА
           IconButton(
             icon: const Icon(Icons.logout),
@@ -120,7 +120,7 @@ class _ParentHomeView extends ConsumerWidget {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
                           onTap: () {
-                            context.go('/tasks/${child.uid}', extra: child);
+                            context.push('/tasks/${child.uid}', extra: child);
                             // ScaffoldMessenger.of(ctx).showSnackBar(
                             //   SnackBar(content: Text('Профиль: ${child.displayName}. Скоро здесь будут задачи!')),
                             // );
@@ -144,14 +144,20 @@ class _ParentHomeView extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 8),
-                              // Можно вывести баланс звезд, если он хранится в профиле
-                              // Row(
-                              //   mainAxisAlignment: MainAxisAlignment.center,
-                              //   children: [
-                              //     const Icon(Icons.star, color: Colors.amber, size: 16),
-                              //     Text('0'),
-                              //   ],
-                              // )
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.star, color: Colors.amber, size: 20),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${child.stars}',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),

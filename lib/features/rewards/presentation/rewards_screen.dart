@@ -182,10 +182,6 @@ class _RewardsContentState extends ConsumerState<_RewardsContent> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Магазин наград (${widget.user.displayName})'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

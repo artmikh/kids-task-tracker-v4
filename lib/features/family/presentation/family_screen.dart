@@ -192,16 +192,6 @@ class _FamilyContentState extends ConsumerState<_FamilyContent> {
             Text(widget.user.displayName, style: const TextStyle(fontSize: 14)),
           ],
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (!context.canPop()) {
-              context.go('/home');
-            } else {
-              context.pop();
-            }
-          },
-        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

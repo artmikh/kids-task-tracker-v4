@@ -9,14 +9,20 @@ class UserProfile {
   final UserRole role;
   final String? avatarUrl;
   final DateTime createdAt;
+  final int stars;
+  final int balance;
+  final List<String> familyIds;
 
   UserProfile({
     required this.uid,
     required this.email,
     required this.displayName,
-    this.role = UserRole.parent, // По умолчанию родитель
+    this.role = UserRole.parent,
     this.avatarUrl,
     required this.createdAt,
+    this.stars = 0,
+    this.balance = 0,
+    this.familyIds = const [],
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
@@ -28,6 +34,9 @@ class UserProfile {
       role: (data['role'] as String?) == 'child' ? UserRole.child : UserRole.parent,
       avatarUrl: data['avatarUrl'],
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      stars: (data['stars'] as num?)?.toInt() ?? 0,
+      balance: (data['balance'] as num?)?.toInt() ?? 0,
+      familyIds: (data['familyIds'] as List<dynamic>?)?.cast<String>() ?? [],
     );
   }
 
@@ -38,6 +47,9 @@ class UserProfile {
       'role': role.name,
       'avatarUrl': avatarUrl,
       'createdAt': Timestamp.fromDate(createdAt),
+      'stars': stars,
+      'balance': balance,
+      'familyIds': familyIds,
     };
   }
 
@@ -48,6 +60,9 @@ class UserProfile {
     UserRole? role,
     String? avatarUrl,
     DateTime? createdAt,
+    int? stars,
+    int? balance,
+    List<String>? familyIds,
   }) {
     return UserProfile(
       uid: uid ?? this.uid,
@@ -56,6 +71,9 @@ class UserProfile {
       role: role ?? this.role,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       createdAt: createdAt ?? this.createdAt,
+      stars: stars ?? this.stars,
+      balance: balance ?? this.balance,
+      familyIds: familyIds ?? this.familyIds,
     );
   }
 }
