@@ -6,59 +6,11 @@ import '../domain/task_model.dart';
 import '../../auth/presentation/auth_provider.dart';
 import '../../family/presentation/family_provider.dart';
 import '../../user/domain/user_profile.dart';
-
 // Провайдеры
-final taskRepositoryProvider = Provider<TaskRepository>((ref) => TaskRepository());
+import 'task_provider.dart';
 
-final tasksStreamProvider = StreamProvider.family<List<Task>, String>((ref, childId) {
-  final repo = ref.watch(taskRepositoryProvider);
-  return repo.getTasksForChildStream(childId);
-});
 
-final taskControllerProvider = StateNotifierProvider.family<TaskController, TaskState, String>((ref, childId) {
-  return TaskController(ref.watch(taskRepositoryProvider), childId);
-});
 
-class TaskState {
-  final bool isLoading;
-  final String? error;
-  TaskState({this.isLoading = false, this.error});
-  TaskState copyWith({bool? isLoading, String? error}) => 
-    TaskState(isLoading: isLoading ?? this.isLoading, error: error);
-}
-
-class TaskController extends StateNotifier<TaskState> {
-  final TaskRepository _repo;
-  final String _childId;
-
-  TaskController(this._repo, this._childId) : super(TaskState());
-
-  Future<bool> addTask(String title, String description, int stars) async {
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      await _repo.createTask(_childId, title, description, stars);
-      state = state.copyWith(isLoading: false);
-      return true;
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString().replaceAll('Exception: ', ''));
-      return false;
-    }
-  }
-
-  Future<void> deleteTask(String taskId) async {
-    try { await _repo.deleteTask(taskId); } 
-    catch (e) { state = state.copyWith(error: e.toString()); }
-  }
-
-  Future<void> updateStatus(String taskId, TaskStatus status) async {
-    try { 
-      await _repo.updateTaskStatus(taskId, status);  
-    }
-    catch (e) { state = state.copyWith(error: e.toString()); }
-  }
-  
-  void clearError() => state = state.copyWith(error: null);
-}
 
 // Экран
 class ParentTasksScreen extends ConsumerStatefulWidget {
@@ -77,15 +29,15 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(taskControllerProvider(widget.childId).notifier).clearError();
+      ref.read(taskControllerProvider.notifier).clearError();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final state = ref.watch(taskControllerProvider(widget.childId));
-    final tasksAsync = ref.watch(tasksStreamProvider(widget.childId));
+    final state = ref.watch(taskControllerProvider);
+    final tasksAsync = ref.watch(tasksForChildProvider(childId));
 
     // Обработка ошибок
     if (state.error != null) {
@@ -94,7 +46,7 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.error!), backgroundColor: Colors.red),
           );
-          ref.read(taskControllerProvider(widget.childId).notifier).clearError();
+          ref.read(taskControllerProvider.notifier).clearError();
         }
       });
     }
@@ -247,10 +199,10 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                               _showTaskDialog(context, ref, task: task);
                             }
                             if (val == 'delete') _confirmDelete(context, task.id);
-                            if (val == 'todo') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.todo);
-                            if (val == 'in_progress') ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.inProgress);
+                            if (val == 'todo') ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.todo);
+                            if (val == 'in_progress') ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.inProgress);
                             if (val == 'done') {
-                              ref.read(taskControllerProvider(widget.childId).notifier).updateStatus(task.id, TaskStatus.done);
+                              ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.done);
                               ref.invalidate(myChildrenProvider);
                             }
                           },
@@ -311,7 +263,7 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
         FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red), 
-          onPressed: () { ref.read(taskControllerProvider(widget.childId).notifier).deleteTask(id); Navigator.pop(ctx); },
+          onPressed: () { ref.read(taskControllerProvider.notifier).deleteTask(id); Navigator.pop(ctx); },
           child: const Text('Удалить')),
       ],
     ));
@@ -392,7 +344,7 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                 if (task == null) {
                   // --- СОЗДАНИЕ НОВОЙ ЗАДАЧИ ---
                   // Вызываем метод addTask с параметрами, как он ожидает
-                  success = await ref.read(taskControllerProvider(widget.childId).notifier).addTask(
+                  success = await ref.read(taskControllerProvider.notifier).addTask(
                     titleCtrl.text.trim(),
                     descCtrl.text.trim(),
                     rewardStars,

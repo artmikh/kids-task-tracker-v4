@@ -1,52 +1,37 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+// lib/features/tasks/presentation/task_provider.dart
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../user/domain/user_profile.dart';
 import '../data/task_repository.dart';
 import '../domain/task_model.dart';
 
-final taskRepositoryProvider = Provider<TaskRepository>((ref) {
+part 'task_provider.g.dart';
+
+@riverpod
+TaskRepository taskRepository(TaskRepositoryRef ref) {
   return TaskRepository();
-});
-
-// Поток задач для выбранного ребенка
-final tasksForChildProvider = StreamProvider.family<List<Task>, String>((ref, childId) {
-  final repo = ref.watch(taskRepositoryProvider);
-  return repo.getTasksForChildStream(childId);
-});
-
-// Поток профиля ребенка (чтобы видеть баланс звезд)
-final childProfileProvider = StreamProvider.family<UserProfile?, String>((ref, childId) {
-  final repo = ref.watch(taskRepositoryProvider);
-  return repo.getChildProfileStream(childId);
-});
-
-// Контроллер действий
-final taskControllerProvider = StateNotifierProvider<TaskController, TaskState>((ref) {
-  return TaskController(ref.watch(taskRepositoryProvider));
-});
-
-class TaskState {
-  final bool isLoading;
-  final String? error;
-
-  TaskState({this.isLoading = false, this.error});
-
-  TaskState copyWith({bool? isLoading, String? error}) {
-    return TaskState(
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
 }
 
-class TaskController extends StateNotifier<TaskState> {
-  final TaskRepository _repo;
+@riverpod
+Stream<List<Task>> tasksForChild(TasksForChildRef ref, String childId) {
+  final repo = ref.watch(taskRepositoryProvider);
+  return repo.getTasksForChildStream(childId);
+}
 
-  TaskController(this._repo) : super(TaskState());
+@riverpod
+Stream<UserProfile?> childProfile(ChildProfileRef ref, String childId) {
+  final repo = ref.watch(taskRepositoryProvider);
+  return repo.getChildProfileStream(childId);
+}
+
+@riverpod
+class TaskController extends _$TaskController {
+  @override
+  TaskState build() => const TaskState();
 
   Future<bool> createTask(String childId, String title, String description, int stars) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _repo.createTask(childId, title, description, stars);
+      await ref.read(taskRepositoryProvider).createTask(childId, title, description, stars);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -55,10 +40,11 @@ class TaskController extends StateNotifier<TaskState> {
     }
   }
 
-  Future<bool> updateStatus(Task task, TaskStatus newStatus) async {
+  // ИСПРАВЛЕНО: передаём taskId (String) вместо Task-объекта
+  Future<bool> updateStatus(String taskId, TaskStatus newStatus) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _repo.updateTaskStatus(task, newStatus);
+      await ref.read(taskRepositoryProvider).updateTaskStatus(taskId, newStatus);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -69,13 +55,27 @@ class TaskController extends StateNotifier<TaskState> {
 
   Future<void> deleteTask(String id) async {
     try {
-      await _repo.deleteTask(id);
+      await ref.read(taskRepositoryProvider).deleteTask(id);
     } catch (e) {
       state = state.copyWith(error: e.toString().replaceAll('Exception: ', ''));
     }
   }
-  
+
   void clearError() {
     state = state.copyWith(error: null);
+  }
+}
+
+class TaskState {
+  final bool isLoading;
+  final String? error;
+
+  const TaskState({this.isLoading = false, this.error});
+
+  TaskState copyWith({bool? isLoading, String? error}) {
+    return TaskState(
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
   }
 }

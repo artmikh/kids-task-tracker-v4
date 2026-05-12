@@ -6,19 +6,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
 
-// Импорт темы
 import 'core/theme/app_theme.dart';
-
-// Импорт экранов
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/register_screen.dart';
-import 'features/family/presentation/family_screen.dart';
-import 'features/home/presentation/home_screen.dart'; // Экран родителя
-import 'features/children/presentation/child_home_screen.dart'; // Экран ребенка (создадим ниже)
 import 'features/auth/presentation/auth_provider.dart';
+import 'features/family/presentation/family_screen.dart';
+import 'features/family/presentation/family_provider.dart';
+import 'features/home/presentation/home_screen.dart';
+import 'features/children/presentation/child_home_screen.dart';
 import 'features/rewards/presentation/rewards_screen.dart';
 import 'features/tasks/presentation/parent_tasks_screen.dart';
-import 'features/user/domain/user_profile.dart'; // Для UserRole
+import 'features/user/domain/user_profile.dart';
 
 // Конфигурация для веба
 final FirebaseOptions webOptions = const FirebaseOptions(

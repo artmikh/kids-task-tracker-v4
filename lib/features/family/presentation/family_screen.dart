@@ -7,10 +7,8 @@ import '../../user/domain/user_profile.dart';
 import '../../auth/presentation/auth_provider.dart';
 
 // --- PROVIDERS ---
+import 'family_provider.dart';
 
-final familyRepositoryProvider = Provider<FamilyRepository>((ref) {
-  return FamilyRepository();
-});
 
 // ИСПРАВЛЕНИЕ: Явно добавляем зависимость от authStateProvider.
 // При смене пользователя (изменении authState) этот провайдер пересоздастся,

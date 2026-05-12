@@ -1,45 +1,30 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+// lib/features/auth/presentation/auth_provider.dart
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/auth_repository.dart';
-// Импортируем новую модель профиля вместо старой AppUser
-import '../../user/domain/user_profile.dart'; 
+import '../../user/domain/user_profile.dart';
 
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
+part 'auth_provider.g.dart';
+
+@riverpod
+AuthRepository authRepository(AuthRepositoryRef ref) {
   return AuthRepository();
-});
-
-// Теперь стрим возвращает UserProfile?
-final authStateProvider = StreamProvider<UserProfile?>((ref) {
-  final repository = ref.watch(authRepositoryProvider);
-  return repository.authStateChanges;
-});
-
-final authControllerProvider = StateNotifierProvider<AuthController, AuthState>((ref) {
-  return AuthController(ref.watch(authRepositoryProvider));
-});
-
-class AuthState {
-  final bool isLoading;
-  final String? error;
-
-  AuthState({this.isLoading = false, this.error});
-
-  AuthState copyWith({bool? isLoading, String? error}) {
-    return AuthState(
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
 }
 
-class AuthController extends StateNotifier<AuthState> {
-  final AuthRepository _repository;
+@riverpod
+Stream<UserProfile?> authState(AuthStateRef ref) {
+  final repository = ref.watch(authRepositoryProvider);
+  return repository.authStateChanges;
+}
 
-  AuthController(this._repository) : super(AuthState());
+@riverpod
+class AuthController extends _$AuthController {
+  @override
+  AuthState build() => const AuthState();
 
   Future<bool> signIn(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _repository.signInWithEmailAndPassword(email, password);
+      await ref.read(authRepositoryProvider).signInWithEmailAndPassword(email, password);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -48,12 +33,10 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  // Обновленный метод регистрации: добавлен параметр role
   Future<bool> signUp(String email, String password, String name, UserRole role) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // Передаем роль в репозиторий
-      await _repository.createUserWithEmailAndPassword(email, password, name, role);
+      await ref.read(authRepositoryProvider).createUserWithEmailAndPassword(email, password, name, role);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -64,5 +47,19 @@ class AuthController extends StateNotifier<AuthState> {
 
   void clearError() {
     state = state.copyWith(error: null);
+  }
+}
+
+class AuthState {
+  final bool isLoading;
+  final String? error;
+
+  const AuthState({this.isLoading = false, this.error});
+
+  AuthState copyWith({bool? isLoading, String? error}) {
+    return AuthState(
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
   }
 }

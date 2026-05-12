@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../domain/task_model.dart';
-import '../../user/domain/user_profile.dart';
 
 class TaskRepository {
   final FirebaseFirestore _firestore;
@@ -13,8 +12,8 @@ class TaskRepository {
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance;
 
-  CollectionReference get _tasksCollection => _firestore.collection('tasks');
-  CollectionReference get _usersCollection => _firestore.collection('users');
+  CollectionReference<Map<String, dynamic>> get _tasksCollection =>
+      _firestore.collection('tasks');
 
   String? get currentUid => _auth.currentUser?.uid;
 
@@ -24,13 +23,17 @@ class TaskRepository {
         .where('childId', isEqualTo: childId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Task.fromFirestore(doc))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Task.fromFirestore(doc)).toList());
   }
 
   /// Создание новой задачи
-  Future<void> createTask(String childId, String title, String description, int rewardStars) async {
+  Future<void> createTask(
+    String childId,
+    String title,
+    String description,
+    int rewardStars,
+  ) async {
     final parentId = currentUid;
     if (parentId == null) throw Exception('Необходимо войти как родитель');
 
@@ -48,7 +51,7 @@ class TaskRepository {
     await _tasksCollection.add(newTask.toMap());
   }
 
-  /// Обновление задачи (редактирование текста, удаление)
+  /// Обновление задачи (редактирование текста)
   Future<void> updateTask(Task task) async {
     await _tasksCollection.doc(task.id).update(task.toMap());
   }
@@ -58,80 +61,44 @@ class TaskRepository {
     await _tasksCollection.doc(taskId).delete();
   }
 
-  /// Изменение статуса задачи с начислением наград
-  /// Если статус меняется на 'done', начисляются звезды.
-  /// Если статус меняется с 'done' на другой, звезды списываются (опционально, сейчас просто не начисляем повторно).
+  /// Изменение статуса задачи.
+  ///
+  /// ВАЖНО: Эта версия НЕ начисляет баллы на клиенте!
+  /// Баллы начисляются через Cloud Function (триггер на изменение документа).
+  /// Пока Cloud Function не развернута — баллы НЕ начисляются автоматически.
+  /// См. ниже заглушку для локальной разработки.
   Future<void> updateTaskStatus(String taskId, TaskStatus newStatus) async {
-    final taskRef = _tasksCollection.doc(taskId);
+    final updateData = <String, dynamic>{
+      'status': newStatus.name,
+    };
 
-    try {
-      await _firestore.runTransaction((transaction) async {
-        // 1. Читаем текущее состояние задачи ВНУТРИ транзакции
-        final taskDoc = await transaction.get(taskRef);
-        
-        if (!taskDoc.exists) {
-          throw Exception('Задача не найдена');
-        }
-
-        final data = taskDoc.data() as Map<String, dynamic>;
-        final currentStatusStr = data['status'] as String;
-        
-        // Если статус уже такой же, ничего не делаем (чтобы не начислять звезды повторно при клике)
-        if (currentStatusStr == newStatus.name) {
-          print('⚠️ Статус уже установлен в $newStatus, пропускаем.');
-          return; 
-        }
-
-        // 2. Формируем данные для обновления задачи
-        final updateData = <String, dynamic>{
-          'status': newStatus.name,
-        };
-
-        if (newStatus == TaskStatus.done) {
-          updateData['completedAt'] = FieldValue.serverTimestamp();
-        } else {
-          updateData['completedAt'] = null;
-        }
-
-        // Обновляем задачу
-        transaction.update(taskRef, updateData);
-        print('✅ Задача $taskId обновлена: статус -> ${newStatus.name}');
-
-        // 3. Логика начисления звезд (ТОЛЬКО если переходим в DONE)
-        if (newStatus == TaskStatus.done) {
-          final childId = data['childId'] as String?;
-          final rewardStars = (data['rewardStars'] as num?)?.toInt() ?? 0;
-
-          if (childId != null && rewardStars > 0) {
-            final userRef = _usersCollection.doc(childId);
-            
-            // Используем FieldValue.increment для безопасного увеличения числа
-            // Это исключает гонки данных и проблемы с приведением типов
-            transaction.update(userRef, {
-              'stars': FieldValue.increment(rewardStars),
-            });
-            
-            print('💰 Начислено $rewardStars звезд ребенку $childId');
-          } else {
-            print('⚠️ Пропуск начисления звезд: childId=$childId, rewardStars=$rewardStars');
-          }
-        }
-      });
-      
-      print('🎉 Транзакция успешно завершена!');
-      
-    } catch (e, stackTrace) {
-      print('❌ Критическая ошибка в транзакции: $e');
-      print('Стек ошибки: $stackTrace');
-      rethrow; // Пробрасываем ошибку дальше, чтобы UI мог её показать
+    if (newStatus == TaskStatus.done) {
+      updateData['completedAt'] = FieldValue.serverTimestamp();
+    } else {
+      updateData['completedAt'] = null;
     }
+
+    await _tasksCollection.doc(taskId).update(updateData);
   }
-  
-  /// Получение профиля ребенка (для проверки баланса и т.д.)
-  Stream<UserProfile?> getChildProfileStream(String childId) {
-    return _usersCollection.doc(childId).snapshots().map((doc) {
-      if (doc.exists) return UserProfile.fromFirestore(doc);
-      return null;
-    });
+
+  /// [ЗАГЛУШКА ДЛЯ ЛОКАЛЬНОЙ РАЗРАБОТКИ]
+  /// Имитирует Cloud Function: начисляет баллы при завершении задачи.
+  /// Использовать ТОЛЬКО пока Cloud Functions не развернуты.
+  /// После развертывания Cloud Function — УДАЛИТЬ этот метод!
+  Future<void> _devAwardStarsOnComplete(String taskId, TaskStatus newStatus) async {
+    if (newStatus != TaskStatus.done) return;
+
+    final taskDoc = await _tasksCollection.doc(taskId).get();
+    if (!taskDoc.exists) return;
+
+    final data = taskDoc.data()!;
+    final childId = data['childId'] as String?;
+    final rewardStars = (data['rewardStars'] as num?)?.toInt() ?? 0;
+
+    if (childId != null && rewardStars > 0) {
+      await _firestore.collection('users').doc(childId).update({
+        'stars': FieldValue.increment(rewardStars),
+      });
+    }
   }
 }

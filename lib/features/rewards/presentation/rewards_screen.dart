@@ -12,10 +12,8 @@ import '../../auth/presentation/auth_provider.dart';
 import '../../user/domain/user_profile.dart'; // Добавлен импорт
 
 // --- PROVIDERS ---
+import 'rewards_provider.dart';
 
-final rewardRepositoryProvider = Provider<RewardRepository>((ref) {
-  return RewardRepository();
-});
 
 // final myRewardsProvider = StreamProvider<List<Reward>>((ref) {
 //   final repo = ref.watch(rewardRepositoryProvider);

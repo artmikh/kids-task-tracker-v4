@@ -1,38 +1,25 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+// lib/features/rewards/presentation/rewards_provider.dart
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/reward_repository.dart';
 import '../domain/reward_model.dart';
 
-final rewardRepositoryProvider = Provider<RewardRepository>((ref) {
+part 'rewards_provider.g.dart';
+
+@riverpod
+RewardRepository rewardRepository(RewardRepositoryRef ref) {
   return RewardRepository();
-});
-
-final myRewardsProvider = StreamProvider<List<Reward>>((ref) {
-  final repo = ref.watch(rewardRepositoryProvider);
-  return repo.getMyRewardsStream();
-});
-
-final rewardsControllerProvider = StateNotifierProvider<RewardsController, RewardsState>((ref) {
-  return RewardsController(ref.watch(rewardRepositoryProvider));
-});
-
-class RewardsState {
-  final bool isLoading;
-  final String? error;
-
-  RewardsState({this.isLoading = false, this.error});
-
-  RewardsState copyWith({bool? isLoading, String? error}) {
-    return RewardsState(
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
 }
 
-class RewardsController extends StateNotifier<RewardsState> {
-  final RewardRepository _repo;
+@riverpod
+Stream<List<Reward>> myRewards(MyRewardsRef ref) {
+  final repo = ref.watch(rewardRepositoryProvider);
+  return repo.getMyRewardsStream();
+}
 
-  RewardsController(this._repo) : super(RewardsState());
+@riverpod
+class RewardsController extends _$RewardsController {
+  @override
+  RewardsState build() => const RewardsState();
 
   Future<bool> createReward({
     required String title,
@@ -41,7 +28,7 @@ class RewardsController extends StateNotifier<RewardsState> {
     int costInStars = 0,
     int durationMinutes = 0,
   }) async {
-    final parentId = _repo.currentUid;
+    final parentId = ref.read(rewardRepositoryProvider).currentUid;
     if (parentId == null) {
       state = state.copyWith(error: 'Ошибка авторизации');
       return false;
@@ -59,7 +46,7 @@ class RewardsController extends StateNotifier<RewardsState> {
         durationMinutes: durationMinutes,
         createdAt: DateTime.now(),
       );
-      await _repo.addReward(reward);
+      await ref.read(rewardRepositoryProvider).addReward(reward);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -71,7 +58,7 @@ class RewardsController extends StateNotifier<RewardsState> {
   Future<bool> updateReward(Reward reward) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _repo.updateReward(reward);
+      await ref.read(rewardRepositoryProvider).updateReward(reward);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
@@ -82,15 +69,29 @@ class RewardsController extends StateNotifier<RewardsState> {
 
   Future<bool> deleteReward(String id) async {
     try {
-      await _repo.deleteReward(id);
+      await ref.read(rewardRepositoryProvider).deleteReward(id);
       return true;
     } catch (e) {
       state = state.copyWith(error: e.toString());
       return false;
     }
   }
-  
+
   void clearError() {
     state = state.copyWith(error: null);
+  }
+}
+
+class RewardsState {
+  final bool isLoading;
+  final String? error;
+
+  const RewardsState({this.isLoading = false, this.error});
+
+  RewardsState copyWith({bool? isLoading, String? error}) {
+    return RewardsState(
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
   }
 }

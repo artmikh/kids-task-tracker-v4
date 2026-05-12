@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_provider.dart';
+import '../../family/presentation/family_provider.dart';
 
 class ChildHomeScreen extends ConsumerWidget {
   const ChildHomeScreen({super.key});
@@ -12,22 +13,25 @@ class ChildHomeScreen extends ConsumerWidget {
 
     return userAsync.when(
       data: (user) {
-        if (user == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        if (user == null) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
+        final theme = Theme.of(context);
 
         return Scaffold(
           appBar: AppBar(
             title: Text('Привет, ${user.displayName}!'),
-            backgroundColor: Colors.orangeAccent, // Цвет для отличия от родительского
             actions: [
               IconButton(
-                icon: const Icon(Icons.family_restroom), // Иконка семьи
+                icon: const Icon(Icons.family_restroom),
                 tooltip: 'Семья',
-                onPressed: () => context.go('/family'), // Переход на экран семьи
+                onPressed: () => context.go('/family'),
               ),
               IconButton(
                 icon: const Icon(Icons.logout),
                 onPressed: () => ref.read(authRepositoryProvider).signOut(),
-              )
+              ),
             ],
           ),
           body: Center(
@@ -38,10 +42,20 @@ class ChildHomeScreen extends ConsumerWidget {
                 const SizedBox(height: 24),
                 Text(
                   'Это детский режим',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: theme.textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 16),
-                Text('Здесь будут твои задачи и награды.'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber, size: 28),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${user.stars} звёзд',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () {
@@ -50,7 +64,7 @@ class ChildHomeScreen extends ConsumerWidget {
                     );
                   },
                   child: const Text('Мои задачи (скоро)'),
-                )
+                ),
               ],
             ),
           ),
