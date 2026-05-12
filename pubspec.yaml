@@ -4,16 +4,19 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   
   # Firebase
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.16.0
-  cloud_firestore: ^4.15.0
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_core_web: ^2.18.1
+  firebase_auth_web: ^5.13.2
+  cloud_firestore_web: ^4.3.2
   
   # State Management
   flutter_riverpod: ^2.4.9
@@ -26,6 +29,9 @@ dependencies:
   intl: ^0.18.1
   equatable: ^2.0.5
   image_picker: ^1.0.7
+
+  # Web
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:

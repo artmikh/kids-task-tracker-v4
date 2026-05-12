@@ -28,19 +28,26 @@ class TaskController extends _$TaskController {
   @override
   TaskState build() => const TaskState();
 
-  Future<bool> createTask(String childId, String title, String description, int stars) async {
+  Future<bool> createTask(
+    String childId,
+    String title,
+    String description,
+    int stars,
+  ) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       await ref.read(taskRepositoryProvider).createTask(childId, title, description, stars);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString().replaceAll('Exception: ', ''));
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
       return false;
     }
   }
 
-  // ИСПРАВЛЕНО: передаём taskId (String) вместо Task-объекта
   Future<bool> updateStatus(String taskId, TaskStatus newStatus) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -48,7 +55,10 @@ class TaskController extends _$TaskController {
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString().replaceAll('Exception: ', ''));
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
       return false;
     }
   }

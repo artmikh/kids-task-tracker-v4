@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../domain/task_model.dart';
+import '../../user/domain/user_profile.dart';
 
 class TaskRepository {
   final FirebaseFirestore _firestore;
@@ -100,5 +101,13 @@ class TaskRepository {
         'stars': FieldValue.increment(rewardStars),
       });
     }
+  }
+    /// Поток профиля ребенка (для отображения баланса звёзд в UI)
+  /// Это просто ЧТЕНИЕ данных — допустимо на клиенте.
+  Stream<UserProfile?> getChildProfileStream(String childId) {
+    return _firestore.collection('users').doc(childId).snapshots().map((doc) {
+      if (doc.exists) return UserProfile.fromFirestore(doc);
+      return null;
+    });
   }
 }
