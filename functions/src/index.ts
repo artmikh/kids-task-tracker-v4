@@ -1,10 +1,11 @@
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
-import * as admin from 'firebase-admin';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-admin.initializeApp();
+initializeApp();
 
-const db = admin.firestore();
+const db = getFirestore();
 
 // ============================================
 // 1. НАЧИСЛЕНИЕ ЗВЁЗД при выполнении задачи
@@ -27,7 +28,7 @@ export const awardStarsOnTaskComplete = onDocumentUpdated(
 
       if (childId && rewardStars > 0) {
         await db.collection('users').doc(childId).update({
-          stars: admin.firestore.FieldValue.increment(rewardStars),
+          stars: FieldValue.increment(rewardStars),
         });
 
         await db.collection('transactions').add({
@@ -36,7 +37,7 @@ export const awardStarsOnTaskComplete = onDocumentUpdated(
           amount: rewardStars,
           taskId: event.params.taskId,
           description: `Награда за: ${after.title}`,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
 
         console.log(`✅ Начислено ${rewardStars} звёзд ребенку ${childId}`);
@@ -50,7 +51,7 @@ export const awardStarsOnTaskComplete = onDocumentUpdated(
 
       if (childId && rewardStars > 0) {
         await db.collection('users').doc(childId).update({
-          stars: admin.firestore.FieldValue.increment(-rewardStars),
+          stars: FieldValue.increment(-rewardStars),
         });
 
         await db.collection('transactions').add({
@@ -59,7 +60,7 @@ export const awardStarsOnTaskComplete = onDocumentUpdated(
           amount: -rewardStars,
           taskId: event.params.taskId,
           description: `Отмена награды: ${before.title}`,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
 
         console.log(`↩️ Списано ${rewardStars} звёзд у ребенка ${childId}`);
@@ -123,7 +124,7 @@ export const purchaseReward = onCall(
       }
 
       transaction.update(db.collection('users').doc(uid), {
-        stars: admin.firestore.FieldValue.increment(-cost),
+        stars: FieldValue.increment(-cost),
       });
 
       transaction.create(db.collection('purchased_rewards').doc(), {
@@ -133,7 +134,7 @@ export const purchaseReward = onCall(
         rewardType: reward.type,
         costInStars: cost,
         parentId: reward.parentId,
-        purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
+        purchasedAt: FieldValue.serverTimestamp(),
         status: 'pending',
       });
 
@@ -143,7 +144,7 @@ export const purchaseReward = onCall(
         amount: -cost,
         rewardId: rewardId,
         description: `Покупка: ${reward.title}`,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
     });
 
