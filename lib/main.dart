@@ -16,6 +16,7 @@ import 'features/home/presentation/home_screen.dart';
 import 'features/children/presentation/child_home_screen.dart';
 import 'features/rewards/presentation/rewards_screen.dart';
 import 'features/tasks/presentation/parent_tasks_screen.dart';
+import 'features/tasks/presentation/child_tasks_screen.dart';
 import 'features/user/domain/user_profile.dart';
 
 // Конфигурация для веба
@@ -100,6 +101,12 @@ class KidsTaskTrackerApp extends ConsumerWidget {
                     child: ParentTasksScreen(childId: childId, childName: childName),
                   );
                 },
+              ),
+              GoRoute(
+                path: '/my-tasks',
+                name: 'childTasks',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: ChildTasksScreen()),
               ),
             ],
           ),

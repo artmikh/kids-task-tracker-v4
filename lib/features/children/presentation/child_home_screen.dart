@@ -58,12 +58,8 @@ class ChildHomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Раздел в разработке')),
-                    );
-                  },
-                  child: const Text('Мои задачи (скоро)'),
+                  onPressed: () => context.go('/my-tasks'),
+                  child: const Text('Мои задачи'),
                 ),
               ],
             ),
