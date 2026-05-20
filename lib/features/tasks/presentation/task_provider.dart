@@ -48,10 +48,14 @@ class TaskController extends _$TaskController {
     }
   }
 
-  Future<bool> updateStatus(String taskId, TaskStatus newStatus) async {
+  Future<bool> updateStatus(String taskId, TaskStatus newStatus, {int? currentRevisionCount}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await ref.read(taskRepositoryProvider).updateTaskStatus(taskId, newStatus);
+      await ref.read(taskRepositoryProvider).updateTaskStatus(
+        taskId,
+        newStatus,
+        currentRevisionCount: currentRevisionCount,
+      );
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {

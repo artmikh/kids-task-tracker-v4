@@ -64,11 +64,8 @@ class TaskRepository {
 
   /// Изменение статуса задачи.
   ///
-  /// ВАЖНО: Эта версия НЕ начисляет баллы на клиенте!
-  /// Баллы начисляются через Cloud Function (триггер на изменение документа).
-  /// Пока Cloud Function не развернута — баллы НЕ начисляются автоматически.
-  /// См. ниже заглушку для локальной разработки.
-  Future<void> updateTaskStatus(String taskId, TaskStatus newStatus) async {
+  /// Баллы начисляются через Cloud Function только при переходе в 'done'.
+  Future<void> updateTaskStatus(String taskId, TaskStatus newStatus, {int? currentRevisionCount}) async {
     final updateData = <String, dynamic>{
       'status': newStatus.name,
     };
@@ -77,6 +74,15 @@ class TaskRepository {
       updateData['completedAt'] = FieldValue.serverTimestamp();
     } else {
       updateData['completedAt'] = null;
+    }
+
+    if (newStatus == TaskStatus.review) {
+      updateData['submittedAt'] = FieldValue.serverTimestamp();
+    }
+
+    // Если родитель возвращает задачу с проверки на доработку — увеличиваем revisionCount
+    if (newStatus == TaskStatus.inProgress && currentRevisionCount != null) {
+      updateData['revisionCount'] = currentRevisionCount + 1;
     }
 
     await _tasksCollection.doc(taskId).update(updateData);

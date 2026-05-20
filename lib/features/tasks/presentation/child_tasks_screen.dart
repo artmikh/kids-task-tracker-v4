@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../domain/task_model.dart';
 import '../../auth/presentation/auth_provider.dart';
-import '../../family/presentation/family_provider.dart';
 import '../../user/domain/user_profile.dart';
 import 'task_provider.dart';
 
@@ -108,6 +106,7 @@ class _ChildTasksContentState extends ConsumerState<_ChildTasksContent> {
           // Разделяем задачи по статусам
           final todoTasks = tasks.where((t) => t.status == TaskStatus.todo).toList();
           final inProgressTasks = tasks.where((t) => t.status == TaskStatus.inProgress).toList();
+          final reviewTasks = tasks.where((t) => t.status == TaskStatus.review).toList();
           final doneTasks = tasks.where((t) => t.status == TaskStatus.done).toList();
 
           return RefreshIndicator(
@@ -118,6 +117,21 @@ class _ChildTasksContentState extends ConsumerState<_ChildTasksContent> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (inProgressTasks.isNotEmpty) ...[
+                  _SectionHeader(
+                    icon: Icons.play_arrow,
+                    title: 'В процессе',
+                    color: Colors.blue,
+                    count: inProgressTasks.length,
+                  ),
+                  const SizedBox(height: 8),
+                  ...inProgressTasks.map((task) => _TaskCard(
+                        task: task,
+                        isChild: true,
+                        onStatusChange: (newStatus) => _changeStatus(task, newStatus),
+                      )),
+                  const SizedBox(height: 16),
+                ],
                 if (todoTasks.isNotEmpty) ...[
                   _SectionHeader(
                     icon: Icons.radio_button_unchecked,
@@ -133,15 +147,15 @@ class _ChildTasksContentState extends ConsumerState<_ChildTasksContent> {
                       )),
                   const SizedBox(height: 16),
                 ],
-                if (inProgressTasks.isNotEmpty) ...[
+                if (reviewTasks.isNotEmpty) ...[
                   _SectionHeader(
-                    icon: Icons.play_arrow,
-                    title: 'В процессе',
-                    color: Colors.blue,
-                    count: inProgressTasks.length,
+                    icon: Icons.visibility,
+                    title: 'На проверке',
+                    color: Colors.orange,
+                    count: reviewTasks.length,
                   ),
                   const SizedBox(height: 8),
-                  ...inProgressTasks.map((task) => _TaskCard(
+                  ...reviewTasks.map((task) => _TaskCard(
                         task: task,
                         isChild: true,
                         onStatusChange: (newStatus) => _changeStatus(task, newStatus),
@@ -173,6 +187,8 @@ class _ChildTasksContentState extends ConsumerState<_ChildTasksContent> {
   }
 
   void _changeStatus(Task task, TaskStatus newStatus) {
+    // Ребёнок НЕ передаёт currentRevisionCount — 
+    // инкремент происходит только когда родитель возвращает на доработку
     ref.read(taskControllerProvider.notifier).updateStatus(task.id, newStatus);
   }
 }
@@ -245,15 +261,39 @@ class _TaskCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: task.status == TaskStatus.done
-            ? BorderSide(color: Colors.green.withOpacity(0.3))
-            : BorderSide.none,
+        side: _getBorderSide(),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Бейдж "Доработка" если задача возвращалась
+            if (task.isRevision && task.status != TaskStatus.done) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.refresh, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Доработка${task.revisionCount > 1 ? " ×${task.revisionCount}" : ""}',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             // Заголовок + награда
             Row(
               children: [
@@ -306,16 +346,52 @@ class _TaskCard extends StatelessWidget {
               ),
             ],
             // Кнопки действий (для ребёнка)
-            if (isChild && task.status != TaskStatus.done) ...[
+            if (isChild && task.status != TaskStatus.done && task.status != TaskStatus.review) ...[
               const SizedBox(height: 12),
               Row(
                 children: _buildActionButtons(context),
+              ),
+            ],
+            // Инфо для задач на проверке
+            if (isChild && task.status == TaskStatus.review) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.hourglass_top, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ждём проверки у родителя',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
         ),
       ),
     );
+  }
+
+  BorderSide _getBorderSide() {
+    switch (task.status) {
+      case TaskStatus.review:
+        return BorderSide(color: Colors.orange.withOpacity(0.4));
+      case TaskStatus.done:
+        return BorderSide(color: Colors.green.withOpacity(0.3));
+      default:
+        return BorderSide.none;
+    }
   }
 
   List<Widget> _buildActionButtons(BuildContext context) {
@@ -346,18 +422,20 @@ class _TaskCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: FilledButton.icon(
-              onPressed: () => onStatusChange(TaskStatus.done),
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Готово!'),
+              onPressed: () => onStatusChange(TaskStatus.review),
+              icon: const Icon(Icons.send, size: 18),
+              label: const Text('На проверку'),
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.green,
+                backgroundColor: Colors.orange,
                 minimumSize: const Size.fromHeight(36),
               ),
             ),
           ),
         ];
+      case TaskStatus.review:
+        return []; // Ребёнок не может менять статус — ждёт родителя
       case TaskStatus.done:
-        return []; // Для done — кнопок нет (подтверждение от родителя)
+        return []; // Завершено
     }
   }
 }

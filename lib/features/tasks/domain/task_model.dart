@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum TaskStatus {
   todo,        // Нужно сделать
   inProgress,  // В процессе
-  done         // Выполнено
+  review,      // На проверке
+  done         // Выполнено (подтверждено родителем)
 }
 
 class Task {
@@ -14,8 +15,10 @@ class Task {
   final String description;
   final TaskStatus status;
   final int rewardStars;   // Сколько звезд дадут за выполнение
+  final int revisionCount; // Сколько раз возвращали на доработку
   final DateTime createdAt;
-  final DateTime? completedAt; // Когда выполнили
+  final DateTime? completedAt; // Когда выполнили (подтвердил родитель)
+  final DateTime? submittedAt; // Когда ребёнок отправил на проверку
 
   Task({
     required this.id,
@@ -25,8 +28,10 @@ class Task {
     this.description = '',
     this.status = TaskStatus.todo,
     required this.rewardStars,
+    this.revisionCount = 0,
     required this.createdAt,
     this.completedAt,
+    this.submittedAt,
   });
 
   factory Task.fromFirestore(DocumentSnapshot doc) {
@@ -42,8 +47,10 @@ class Task {
         orElse: () => TaskStatus.todo,
       ),
       rewardStars: data['rewardStars'] ?? 0,
+      revisionCount: data['revisionCount'] ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
+      submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -55,8 +62,10 @@ class Task {
       'description': description,
       'status': status.name,
       'rewardStars': rewardStars,
+      'revisionCount': revisionCount,
       'createdAt': Timestamp.fromDate(createdAt),
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
+      'submittedAt': submittedAt != null ? Timestamp.fromDate(submittedAt!) : null,
     };
   }
 
@@ -68,8 +77,10 @@ class Task {
     String? description,
     TaskStatus? status,
     int? rewardStars,
+    int? revisionCount,
     DateTime? createdAt,
     DateTime? completedAt,
+    DateTime? submittedAt,
   }) {
     return Task(
       id: id ?? this.id,
@@ -79,8 +90,10 @@ class Task {
       description: description ?? this.description,
       status: status ?? this.status,
       rewardStars: rewardStars ?? this.rewardStars,
+      revisionCount: revisionCount ?? this.revisionCount,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
+      submittedAt: submittedAt ?? this.submittedAt,
     );
   }
   
@@ -89,7 +102,11 @@ class Task {
     switch (status) {
       case TaskStatus.todo: return 'Нужно сделать';
       case TaskStatus.inProgress: return 'В процессе';
+      case TaskStatus.review: return 'На проверке';
       case TaskStatus.done: return 'Выполнено';
     }
   }
+
+  // Помечена ли задача как доработка
+  bool get isRevision => revisionCount > 0;
 }

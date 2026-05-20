@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../domain/task_model.dart';
 import '../../auth/presentation/auth_provider.dart';
-import '../../family/presentation/family_provider.dart';
-import '../../user/domain/user_profile.dart';
 import 'task_provider.dart';
 
 class ParentTasksScreen extends ConsumerStatefulWidget {
@@ -94,6 +92,13 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                   ),
                   const SizedBox(width: 8),
                   FilterChip(
+                    label: const Text('На проверке'),
+                    selected: selectedFilter == TaskStatus.review,
+                    onSelected: (_) =>
+                        setState(() => selectedFilter = TaskStatus.review),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
                     label: const Text('Готово'),
                     selected: selectedFilter == TaskStatus.done,
                     onSelected: (_) =>
@@ -108,9 +113,23 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
           Expanded(
             child: tasksAsync.when(
               data: (tasks) {
+                // Сортируем: review первые (надо проверить!), потом inProgress, todo, done
+                final priorityOrder = {
+                  TaskStatus.review: 0,
+                  TaskStatus.inProgress: 1,
+                  TaskStatus.todo: 2,
+                  TaskStatus.done: 3,
+                };
+
+                final sortedTasks = List<Task>.from(tasks)
+                  ..sort((a, b) => priorityOrder[a.status]!
+                      .compareTo(priorityOrder[b.status]!));
+
                 final filteredTasks = selectedFilter == null
-                    ? tasks
-                    : tasks.where((t) => t.status == selectedFilter).toList();
+                    ? sortedTasks
+                    : sortedTasks
+                        .where((t) => t.status == selectedFilter)
+                        .toList();
 
                 if (filteredTasks.isEmpty) {
                   return Center(
@@ -135,90 +154,19 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                   itemCount: filteredTasks.length,
                   itemBuilder: (ctx, i) {
                     final task = filteredTasks[i];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: ListTile(
-                        leading: _getStatusIcon(task.status),
-                        title: Text(
-                          task.title,
-                          style: TextStyle(
-                            decoration: task.status == TaskStatus.done
-                                ? TextDecoration.lineThrough
-                                : null,
+                    return _ParentTaskCard(
+                      task: task,
+                      onApprove: () => _approveTask(task),
+                      onReject: () => _rejectTask(task),
+                      onEdit: () => _showTaskDialog(context, ref, task: task),
+                      onDelete: () => _confirmDelete(context, task.id),
+                      onStatusChange: (status) => ref
+                          .read(taskControllerProvider.notifier)
+                          .updateStatus(
+                            task.id,
+                            status,
+                            currentRevisionCount: task.revisionCount,
                           ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (task.description.isNotEmpty)
-                              Text(task.description,
-                                  maxLines: 2, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.star,
-                                    size: 14, color: Colors.amber),
-                                const SizedBox(width: 4),
-                                Text('${task.rewardStars} звезд',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12)),
-                                const Spacer(),
-                                Text(_getStatusText(task.status),
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color:
-                                            _getStatusColor(task.status))),
-                              ],
-                            ),
-                          ],
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (val) {
-                            if (val == 'edit') {
-                              _showTaskDialog(context, ref, task: task);
-                            }
-                            if (val == 'delete') {
-                              _confirmDelete(context, task.id);
-                            }
-                            if (val == 'todo') {
-                              ref
-                                  .read(taskControllerProvider.notifier)
-                                  .updateStatus(task.id, TaskStatus.todo);
-                            }
-                            if (val == 'in_progress') {
-                              ref
-                                  .read(taskControllerProvider.notifier)
-                                  .updateStatus(
-                                      task.id, TaskStatus.inProgress);
-                            }
-                            if (val == 'done') {
-                              ref
-                                  .read(taskControllerProvider.notifier)
-                                  .updateStatus(task.id, TaskStatus.done);
-                              ref.invalidate(myChildrenProvider);
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                                value: 'todo',
-                                child: Text('Вернуть в ожидание')),
-                            const PopupMenuItem(
-                                value: 'in_progress',
-                                child: Text('В процессе')),
-                            const PopupMenuItem(
-                                value: 'done', child: Text('Завершено')),
-                            const PopupMenuDivider(),
-                            const PopupMenuItem(
-                                value: 'edit',
-                                child: Text('Редактировать')),
-                            const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Удалить',
-                                    style: TextStyle(color: Colors.red))),
-                          ],
-                        ),
-                      ),
                     );
                   },
                 );
@@ -236,42 +184,32 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
     );
   }
 
-  Widget _getStatusIcon(TaskStatus status) {
-    switch (status) {
-      case TaskStatus.todo:
-        return const CircleAvatar(
-            child: Icon(Icons.radio_button_unchecked));
-      case TaskStatus.inProgress:
-        return const CircleAvatar(
-            backgroundColor: Colors.blue,
-            child: Icon(Icons.play_arrow, color: Colors.white));
-      case TaskStatus.done:
-        return const CircleAvatar(
-            backgroundColor: Colors.green,
-            child: Icon(Icons.check, color: Colors.white));
-    }
+  void _approveTask(Task task) {
+    ref.read(taskControllerProvider.notifier).updateStatus(
+      task.id,
+      TaskStatus.done,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ «${task.title}» подтверждено! +${task.rewardStars} ⭐'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
-  String _getStatusText(TaskStatus status) {
-    switch (status) {
-      case TaskStatus.todo:
-        return 'Ожидает';
-      case TaskStatus.inProgress:
-        return 'В процессе';
-      case TaskStatus.done:
-        return 'Готово';
-    }
-  }
-
-  Color _getStatusColor(TaskStatus status) {
-    switch (status) {
-      case TaskStatus.todo:
-        return Colors.grey;
-      case TaskStatus.inProgress:
-        return Colors.blue;
-      case TaskStatus.done:
-        return Colors.green;
-    }
+  void _rejectTask(Task task) {
+    // Возвращаем на inProgress — это увеличит revisionCount
+    ref.read(taskControllerProvider.notifier).updateStatus(
+      task.id,
+      TaskStatus.inProgress,
+      currentRevisionCount: task.revisionCount,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('↩️ «${task.title}» возвращено на доработку'),
+        backgroundColor: Colors.orange,
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, String id) {
@@ -335,7 +273,7 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                 ),
                 if (task != null) ...[
                   const SizedBox(height: 16),
-                  Text('Текущий статус: ${_getStatusText(task.status)}',
+                  Text('Текущий статус: ${task.statusLabel}',
                       style: const TextStyle(fontStyle: FontStyle.italic)),
                 ],
               ],
@@ -362,7 +300,6 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                 }
 
                 if (task == null) {
-                  // Создание новой задачи
                   await ref
                       .read(taskControllerProvider.notifier)
                       .createTask(
@@ -372,7 +309,6 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                         rewardStars,
                       );
                 } else {
-                  // Редактирование — обновляем текст и награду
                   final updatedTask = task.copyWith(
                     title: titleCtrl.text.trim(),
                     description: descCtrl.text.trim(),
@@ -391,5 +327,221 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
         ),
       ),
     );
+  }
+}
+
+// --- Карточка задачи для родителя ---
+
+class _ParentTaskCard extends StatelessWidget {
+  final Task task;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final void Function(TaskStatus) onStatusChange;
+
+  const _ParentTaskCard({
+    required this.task,
+    required this.onApprove,
+    required this.onReject,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onStatusChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isReview = task.status == TaskStatus.review;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isReview
+            ? const BorderSide(color: Colors.orange, width: 2)
+            : BorderSide.none,
+      ),
+      elevation: isReview ? 4 : 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Заголовок + статус
+            Row(
+              children: [
+                _getStatusIcon(task.status),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    task.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      decoration: task.status == TaskStatus.done
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                  ),
+                ),
+                // Награда
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.star, color: Colors.amber, size: 14),
+                      const SizedBox(width: 4),
+                      Text('${task.rewardStars}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            // Описание
+            if (task.description.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                task.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.disabledColor,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            // Статус + доработка
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(task.status).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    task.statusLabel,
+                    style: TextStyle(
+                      color: _getStatusColor(task.status),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (task.isRevision) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Доработка ×${task.revisionCount}',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            // Кнопки проверки (только для задач на проверке)
+            if (isReview) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onReject,
+                      icon: const Icon(Icons.undo, size: 18),
+                      label: const Text('На доработку'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: onApprove,
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Подтвердить'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            // Меню действий (для всех задач)
+            if (!isReview) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: onEdit,
+                    child: const Text('Редактировать'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: onDelete,
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('Удалить'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _getStatusIcon(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.todo:
+        return const CircleAvatar(
+            radius: 16,
+            child: Icon(Icons.radio_button_unchecked, size: 18));
+      case TaskStatus.inProgress:
+        return const CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.blue,
+            child: Icon(Icons.play_arrow, color: Colors.white, size: 18));
+      case TaskStatus.review:
+        return const CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.orange,
+            child: Icon(Icons.visibility, color: Colors.white, size: 18));
+      case TaskStatus.done:
+        return const CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.green,
+            child: Icon(Icons.check, color: Colors.white, size: 18));
+    }
+  }
+
+  Color _getStatusColor(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.todo:
+        return Colors.grey;
+      case TaskStatus.inProgress:
+        return Colors.blue;
+      case TaskStatus.review:
+        return Colors.orange;
+      case TaskStatus.done:
+        return Colors.green;
+    }
   }
 }
