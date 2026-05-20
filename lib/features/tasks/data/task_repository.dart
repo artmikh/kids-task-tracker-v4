@@ -29,7 +29,7 @@ class TaskRepository {
   }
 
   /// Создание новой задачи
-  Future<void> createTask(
+    Future<void> createTask(
     String childId,
     String title,
     String description,
@@ -46,7 +46,7 @@ class TaskRepository {
       description: description,
       rewardStars: rewardStars,
       createdAt: DateTime.now(),
-      status: TaskStatus.todo,
+      status: TaskStatus.backlog,  // <-- было TaskStatus.todo
     );
 
     await _tasksCollection.add(newTask.toMap());

@@ -21,6 +21,7 @@ class ParentTasksScreen extends ConsumerStatefulWidget {
 
 class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
   TaskStatus? selectedFilter;
+  bool _showBacklog = true; // Пул задач развёрнут/свёрнут
 
   @override
   void initState() {
@@ -36,7 +37,6 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
     final state = ref.watch(taskControllerProvider);
     final tasksAsync = ref.watch(tasksForChildProvider(widget.childId));
 
-    // Обработка ошибок
     if (state.error != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -64,7 +64,7 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
       ),
       body: Column(
         children: [
-          // --- Блок фильтров ---
+          // --- Фильтры ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: SingleChildScrollView(
@@ -78,17 +78,17 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                   ),
                   const SizedBox(width: 8),
                   FilterChip(
-                    label: const Text('Ожидание'),
-                    selected: selectedFilter == TaskStatus.todo,
+                    label: const Text('Пул задач'),
+                    selected: selectedFilter == TaskStatus.backlog,
                     onSelected: (_) =>
-                        setState(() => selectedFilter = TaskStatus.todo),
+                        setState(() => selectedFilter = TaskStatus.backlog),
                   ),
                   const SizedBox(width: 8),
                   FilterChip(
-                    label: const Text('В процессе'),
-                    selected: selectedFilter == TaskStatus.inProgress,
+                    label: const Text('Нужно сделать'),
+                    selected: selectedFilter == TaskStatus.todo,
                     onSelected: (_) =>
-                        setState(() => selectedFilter = TaskStatus.inProgress),
+                        setState(() => selectedFilter = TaskStatus.todo),
                   ),
                   const SizedBox(width: 8),
                   FilterChip(
@@ -113,12 +113,13 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
           Expanded(
             child: tasksAsync.when(
               data: (tasks) {
-                // Сортируем: review первые (надо проверить!), потом inProgress, todo, done
+                // Сортируем: review первые, потом inProgress, todo, backlog, done
                 final priorityOrder = {
                   TaskStatus.review: 0,
                   TaskStatus.inProgress: 1,
                   TaskStatus.todo: 2,
-                  TaskStatus.done: 3,
+                  TaskStatus.backlog: 3,
+                  TaskStatus.done: 4,
                 };
 
                 final sortedTasks = List<Task>.from(tasks)
@@ -149,24 +150,24 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
                   );
                 }
 
+                // Если фильтр не выбран — показываем с разделением на секции
+                if (selectedFilter == null) {
+                  return _buildSectionedList(context, filteredTasks);
+                }
+
+                // Если фильтр выбран — просто список
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: filteredTasks.length,
                   itemBuilder: (ctx, i) {
-                    final task = filteredTasks[i];
                     return _ParentTaskCard(
-                      task: task,
-                      onApprove: () => _approveTask(task),
-                      onReject: () => _rejectTask(task),
-                      onEdit: () => _showTaskDialog(context, ref, task: task),
-                      onDelete: () => _confirmDelete(context, task.id),
-                      onStatusChange: (status) => ref
-                          .read(taskControllerProvider.notifier)
-                          .updateStatus(
-                            task.id,
-                            status,
-                            currentRevisionCount: task.revisionCount,
-                          ),
+                      task: filteredTasks[i],
+                      onApprove: () => _approveTask(filteredTasks[i]),
+                      onReject: () => _rejectTask(filteredTasks[i]),
+                      onEdit: () => _showTaskDialog(context, ref, task: filteredTasks[i]),
+                      onDelete: () => _confirmDelete(context, filteredTasks[i].id),
+                      onMoveToTodo: () => _moveToTodo(filteredTasks[i]),
+                      onMoveToBacklog: () => _moveToBacklog(filteredTasks[i]),
                     );
                   },
                 );
@@ -184,11 +185,63 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
     );
   }
 
-  void _approveTask(Task task) {
-    ref.read(taskControllerProvider.notifier).updateStatus(
-      task.id,
-      TaskStatus.done,
+  /// Построение списка с секциями (когда фильтр = "Все")
+  Widget _buildSectionedList(BuildContext context, List<Task> allTasks) {
+    final backlogTasks = allTasks.where((t) => t.status == TaskStatus.backlog).toList();
+    final activeTasks = allTasks.where((t) => t.status != TaskStatus.backlog).toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // --- Секция: Пул задач (сворачиваемая) ---
+        if (backlogTasks.isNotEmpty) ...[
+          _SectionHeader(
+            icon: Icons.inventory_2_outlined,
+            title: 'Пул задач',
+            color: Colors.purple,
+            count: backlogTasks.length,
+            isExpanded: _showBacklog,
+            onToggle: () => setState(() => _showBacklog = !_showBacklog),
+          ),
+          if (_showBacklog) ...[
+            const SizedBox(height: 8),
+            ...backlogTasks.map((task) => _ParentTaskCard(
+                  task: task,
+                  onApprove: () => _approveTask(task),
+                  onReject: () => _rejectTask(task),
+                  onEdit: () => _showTaskDialog(context, ref, task: task),
+                  onDelete: () => _confirmDelete(context, task.id),
+                  onMoveToTodo: () => _moveToTodo(task),
+                  onMoveToBacklog: () => _moveToBacklog(task),
+                )),
+            const SizedBox(height: 16),
+          ],
+        ],
+
+        // --- Активные задачи ---
+        if (activeTasks.isNotEmpty) ...[
+          const _SectionHeader(
+            icon: Icons.assignment,
+            title: 'Текущие задачи',
+            color: Colors.blue,
+          ),
+          const SizedBox(height: 8),
+          ...activeTasks.map((task) => _ParentTaskCard(
+                task: task,
+                onApprove: () => _approveTask(task),
+                onReject: () => _rejectTask(task),
+                onEdit: () => _showTaskDialog(context, ref, task: task),
+                onDelete: () => _confirmDelete(context, task.id),
+                onMoveToTodo: () => _moveToTodo(task),
+                onMoveToBacklog: () => _moveToBacklog(task),
+              )),
+        ],
+      ],
     );
+  }
+
+  void _approveTask(Task task) {
+    ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.done);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('✅ «${task.title}» подтверждено! +${task.rewardStars} ⭐'),
@@ -198,7 +251,6 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
   }
 
   void _rejectTask(Task task) {
-    // Возвращаем на inProgress — это увеличит revisionCount
     ref.read(taskControllerProvider.notifier).updateStatus(
       task.id,
       TaskStatus.inProgress,
@@ -209,6 +261,20 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
         content: Text('↩️ «${task.title}» возвращено на доработку'),
         backgroundColor: Colors.orange,
       ),
+    );
+  }
+
+  void _moveToTodo(Task task) {
+    ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.todo);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('📌 «${task.title}» добавлено в текущий период')),
+    );
+  }
+
+  void _moveToBacklog(Task task) {
+    ref.read(taskControllerProvider.notifier).updateStatus(task.id, TaskStatus.backlog);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('📦 «${task.title}» перемещено в пул задач')),
     );
   }
 
@@ -330,6 +396,74 @@ class _ParentTasksScreenState extends ConsumerState<ParentTasksScreen> {
   }
 }
 
+// --- Секция-заголовок ---
+
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Color color;
+  final int? count;
+  final bool? isExpanded;
+  final VoidCallback? onToggle;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    required this.color,
+    this.count,
+    this.isExpanded,
+    this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+            ),
+            if (count != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+            const Spacer(),
+            if (onToggle != null)
+              Icon(
+                isExpanded! ? Icons.expand_less : Icons.expand_more,
+                color: color,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // --- Карточка задачи для родителя ---
 
 class _ParentTaskCard extends StatelessWidget {
@@ -338,7 +472,8 @@ class _ParentTaskCard extends StatelessWidget {
   final VoidCallback onReject;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final void Function(TaskStatus) onStatusChange;
+  final VoidCallback onMoveToTodo;
+  final VoidCallback onMoveToBacklog;
 
   const _ParentTaskCard({
     required this.task,
@@ -346,21 +481,25 @@ class _ParentTaskCard extends StatelessWidget {
     required this.onReject,
     required this.onEdit,
     required this.onDelete,
-    required this.onStatusChange,
+    required this.onMoveToTodo,
+    required this.onMoveToBacklog,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isBacklog = task.status == TaskStatus.backlog;
     final isReview = task.status == TaskStatus.review;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: isReview
             ? const BorderSide(color: Colors.orange, width: 2)
-            : BorderSide.none,
+            : isBacklog
+                ? BorderSide(color: Colors.purple.withOpacity(0.3))
+                : BorderSide.none,
       ),
       elevation: isReview ? 4 : 1,
       child: Padding(
@@ -368,7 +507,7 @@ class _ParentTaskCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Заголовок + статус
+            // Заголовок + награда
             Row(
               children: [
                 _getStatusIcon(task.status),
@@ -383,7 +522,6 @@ class _ParentTaskCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Награда
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -453,7 +591,38 @@ class _ParentTaskCard extends StatelessWidget {
                 ],
               ],
             ),
-            // Кнопки проверки (только для задач на проверке)
+            // --- Кнопки для Backlog: "Поставить на выполнение" ---
+            if (isBacklog) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onMoveToTodo,
+                  icon: const Icon(Icons.arrow_forward, size: 18),
+                  label: const Text('Поставить на выполнение'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: onEdit,
+                    child: const Text('Редактировать'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: onDelete,
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('Удалить'),
+                  ),
+                ],
+              ),
+            ],
+            // --- Кнопки для Review: "Подтвердить" / "На доработку" ---
             if (isReview) ...[
               const SizedBox(height: 12),
               Row(
@@ -483,17 +652,38 @@ class _ParentTaskCard extends StatelessWidget {
                 ],
               ),
             ],
-            // Меню действий (для всех задач)
-            if (!isReview) ...[
+            // --- Кнопки для активных задач (todo / inProgress): "В пул" ---
+            if (task.status == TaskStatus.todo || task.status == TaskStatus.inProgress) ...[
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  TextButton.icon(
+                    onPressed: onMoveToBacklog,
+                    icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                    label: const Text('В пул'),
+                    style: TextButton.styleFrom(foregroundColor: Colors.purple),
+                  ),
+                  const SizedBox(width: 8),
                   TextButton(
                     onPressed: onEdit,
                     child: const Text('Редактировать'),
                   ),
                   const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: onDelete,
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('Удалить'),
+                  ),
+                ],
+              ),
+            ],
+            // --- Кнопки для Done ---
+            if (task.status == TaskStatus.done) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
                   TextButton(
                     onPressed: onDelete,
                     style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -510,6 +700,11 @@ class _ParentTaskCard extends StatelessWidget {
 
   Widget _getStatusIcon(TaskStatus status) {
     switch (status) {
+      case TaskStatus.backlog:
+        return const CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.purple,
+            child: Icon(Icons.inventory_2_outlined, color: Colors.white, size: 18));
       case TaskStatus.todo:
         return const CircleAvatar(
             radius: 16,
@@ -534,14 +729,11 @@ class _ParentTaskCard extends StatelessWidget {
 
   Color _getStatusColor(TaskStatus status) {
     switch (status) {
-      case TaskStatus.todo:
-        return Colors.grey;
-      case TaskStatus.inProgress:
-        return Colors.blue;
-      case TaskStatus.review:
-        return Colors.orange;
-      case TaskStatus.done:
-        return Colors.green;
+      case TaskStatus.backlog: return Colors.purple;
+      case TaskStatus.todo: return Colors.grey;
+      case TaskStatus.inProgress: return Colors.blue;
+      case TaskStatus.review: return Colors.orange;
+      case TaskStatus.done: return Colors.green;
     }
   }
 }

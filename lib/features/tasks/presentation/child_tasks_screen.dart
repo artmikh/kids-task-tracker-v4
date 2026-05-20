@@ -104,10 +104,13 @@ class _ChildTasksContentState extends ConsumerState<_ChildTasksContent> {
           }
 
           // Разделяем задачи по статусам
-          final todoTasks = tasks.where((t) => t.status == TaskStatus.todo).toList();
-          final inProgressTasks = tasks.where((t) => t.status == TaskStatus.inProgress).toList();
-          final reviewTasks = tasks.where((t) => t.status == TaskStatus.review).toList();
-          final doneTasks = tasks.where((t) => t.status == TaskStatus.done).toList();
+          // Ребёнок видит только задачи начиная с todo (без backlog)
+          final visibleTasks = tasks.where((t) => t.status != TaskStatus.backlog).toList();
+
+          final todoTasks = visibleTasks.where((t) => t.status == TaskStatus.todo).toList();
+          final inProgressTasks = visibleTasks.where((t) => t.status == TaskStatus.inProgress).toList();
+          final reviewTasks = visibleTasks.where((t) => t.status == TaskStatus.review).toList();
+          final doneTasks = visibleTasks.where((t) => t.status == TaskStatus.done).toList();
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -396,6 +399,8 @@ class _TaskCard extends StatelessWidget {
 
   List<Widget> _buildActionButtons(BuildContext context) {
     switch (task.status) {
+      case TaskStatus.backlog:
+        return [];
       case TaskStatus.todo:
         return [
           Expanded(

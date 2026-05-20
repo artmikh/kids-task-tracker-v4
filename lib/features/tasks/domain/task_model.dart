@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum TaskStatus {
-  todo,        // Нужно сделать
+  backlog,     // Пул задач — родитель создал, но ещё не назначил на период
+  todo,        // Нужно сделать — назначено на текущий период
   inProgress,  // В процессе
   review,      // На проверке
-  done         // Выполнено (подтверждено родителем)
+  done         // Готово (подтверждено родителем)
 }
 
 class Task {
@@ -26,7 +27,7 @@ class Task {
     required this.childId,
     required this.title,
     this.description = '',
-    this.status = TaskStatus.todo,
+    this.status = TaskStatus.backlog,
     required this.rewardStars,
     this.revisionCount = 0,
     required this.createdAt,
@@ -98,12 +99,13 @@ class Task {
   }
   
   // Helper для отображения статуса на русском
-  String get statusLabel {
+    String get statusLabel {
     switch (status) {
+      case TaskStatus.backlog: return 'Пул задач';
       case TaskStatus.todo: return 'Нужно сделать';
       case TaskStatus.inProgress: return 'В процессе';
       case TaskStatus.review: return 'На проверке';
-      case TaskStatus.done: return 'Выполнено';
+      case TaskStatus.done: return 'Готово';
     }
   }
 
